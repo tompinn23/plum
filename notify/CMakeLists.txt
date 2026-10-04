@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.16)
+project(notify_cpp LANGUAGES CXX)
+
+add_library(notify)
+target_include_directories(notify PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(notify PUBLIC cxx_std_17)
+
+if(WIN32)
+    target_sources(notify PRIVATE src/notify_windows.cpp)
+    target_compile_definitions(notify PRIVATE UNICODE _UNICODE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(notify PRIVATE src/notify_linux.cpp)
+else()
+    message(FATAL_ERROR "notify_cpp supports Linux and Windows only")
+endif()
+
+find_package(Threads REQUIRED)
+target_link_libraries(notify PUBLIC Threads::Threads)
+
+option(NOTIFY_BUILD_EXAMPLES "Build examples" ON)
+if(NOTIFY_BUILD_EXAMPLES)
+    add_executable(watch_example examples/watch.cpp)
+    target_link_libraries(watch_example PRIVATE notify)
+endif()
+
+option(NOTIFY_BUILD_TESTS "Build smoke test" ON)
+if(NOTIFY_BUILD_TESTS)
+    add_executable(notify_smoke_test tests/smoke_test.cpp)
+    target_link_libraries(notify_smoke_test PRIVATE notify)
+endif()

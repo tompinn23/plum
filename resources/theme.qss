@@ -1,0 +1,63 @@
+/* Based on the trifles dark style, with raised contrast. Accent: #f0b040 */
+
+QMainWindow, QWidget { background: #0d0d0d; color: #e6e6e6; }
+QLabel { font-family: 'IBM Plex Mono'; font-size: 11px; background: transparent; }
+
+/* ---- Sidebar ---------------------------------------------------------- */
+
+QWidget#sidebar { background: #1e1e1e; border-right: 1px solid #383838; }
+
+QPushButton#navButton {
+    background: #1e1e1e; color: #8a8a8a;
+    border: none; border-left: 2px solid transparent; border-right: 1px solid #383838;
+    font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: bold;
+    text-align: left; padding: 10px 12px;
+}
+QPushButton#navButton:hover { color: #f0b040; background: #262626; }
+QPushButton#navButton:checked { color: #f0b040; border-left: 2px solid #f0b040; background: #2a2a2a; }
+
+/* ---- Panes ------------------------------------------------------------ */
+
+QFrame#panel { background: #0d0d0d; border: 1px solid #2a2a2a; }
+QWidget#panelHeader { background: #222222; border-bottom: 1px solid #0d0d0d; }
+QLabel#panelTitle { color: #f0b040; font-weight: bold; }
+QWidget#panelBody { background: #1a1a1a; }
+QWidget#fieldRow { background: transparent; }
+
+QLabel#fieldName { color: #8a8a8a; }
+QLabel#fieldValue { color: #f0f0f0; }
+QLabel#fieldValue[accent="true"] { color: #f0b040; }
+QLabel#sectionLabel {
+    color: #8a8a8a; font-weight: bold;
+    border-bottom: 1px solid #3a3a3a; padding-top: 4px;
+}
+
+QProgressBar { background: #0d0d0d; border: none; }
+QProgressBar::chunk { background: #f0b040; }
+
+/* ---- Chrome ----------------------------------------------------------- */
+
+QWidget#statusBar { background: #0a0a0a; border-top: 1px solid #2a2a2a; }
+QLabel#statusText { color: #8a8a8a; }
+
+QMenuBar { background: #0a0a0a; color: #9a9a9a; border-bottom: 1px solid #383838;
+           font-family: 'IBM Plex Mono'; font-size: 11px; padding: 1px 0; }
+QMenuBar::item { padding: 3px 10px; background: transparent; }
+QMenuBar::item:selected { background: #222222; color: #f0b040; }
+QMenu { background: #161616; border: 1px solid #383838; color: #d0d0d0;
+        font-family: 'IBM Plex Mono'; font-size: 11px; }
+QMenu::item { padding: 5px 24px 5px 16px; }
+QMenu::item:selected { background: #262626; color: #f0b040; }
+QMenu::separator { height: 1px; background: #383838; margin: 3px 8px; }
+QMenu::item:disabled { color: #5a5a5a; }
+
+QSplitter::handle { background: #0d0d0d; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical { height: 4px; }
+QSplitter::handle:hover { background: #f0b040; }
+
+QScrollBar:vertical { background: #0d0d0d; width: 6px; }
+QScrollBar::handle:vertical { background: #4a4a4a; border-radius: 3px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QToolTip { background: #161616; color: #d0d0d0; border: 1px solid #383838; font-family: 'IBM Plex Mono'; }
