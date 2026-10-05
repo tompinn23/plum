@@ -10,19 +10,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    notify::Watcher watcher;
+    notify::watcher watcher;
     for (int i = 1; i < argc; ++i) watcher.watch(argv[i]);
 
     for (;;) {
-        notify::Result r = watcher.receive();
+        notify::result r = watcher.receive();
         if (!r) {
             std::cerr << "error: " << r.error().code.message() << '\n';
             continue;
         }
-        const notify::Event& e = r.event();
+        const notify::event& e = r.event();
         std::cout << notify::to_string(e.kind);
-        if (e.kind == notify::EventKind::Modify && e.modify != notify::ModifyKind::Any)
-            std::cout << (e.modify == notify::ModifyKind::Data ? "(data)" : "(metadata)");
+        if (e.kind == notify::event_kind::Modify && e.modify != notify::modify_kind::Any)
+            std::cout << (e.modify == notify::modify_kind::Data ? "(data)" : "(metadata)");
         if (e.need_rescan) std::cout << " [rescan needed]";
         for (const auto& p : e.paths) std::cout << ' ' << p;
         std::cout << std::endl;

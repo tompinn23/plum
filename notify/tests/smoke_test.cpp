@@ -10,8 +10,8 @@
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
-static std::vector<notify::Event> drain(notify::Watcher& watcher) {
-    std::vector<notify::Event> out;
+static std::vector<notify::event> drain(notify::watcher& watcher) {
+    std::vector<notify::event> out;
     while (auto r = watcher.receive_for(200ms)) {
         assert(*r);
         out.push_back(r->event());
@@ -19,7 +19,7 @@ static std::vector<notify::Event> drain(notify::Watcher& watcher) {
     return out;
 }
 
-static bool has(const std::vector<notify::Event>& evs, notify::EventKind k, const fs::path& p) {
+static bool has(const std::vector<notify::event>& evs, notify::event_kind k, const fs::path& p) {
     for (auto& e : evs)
         for (auto& q : e.paths)
             if (e.kind == k && q.filename() == p.filename()) return true;
@@ -32,9 +32,11 @@ int main() {
     fs::create_directories(dir / "outside");
     fs::create_directories(dir / "w");
     fs::path w = dir / "w";
+    const fs::path old_cwd = fs::current_path();
+    fs::current_path(dir);  // so "./w" below is a relative spelling of w on any drive
 
     {
-        notify::Watcher watcher;
+        notify::watcher watcher;
         watcher.watch(w / "");  // trailing slash normalised
 
         std::ofstream(w / "a.txt") << "hi";
@@ -50,51 +52,57 @@ int main() {
             for (auto& p : e.paths) std::cout << ' ' << p.filename();
             std::cout << '\n';
         }
-        assert(has(evs, notify::EventKind::Create, "a.txt"));
-        assert(has(evs, notify::EventKind::Modify, "a.txt"));
-        assert(has(evs, notify::EventKind::Rename, "b.txt"));
+        assert(has(evs, notify::event_kind::Create, "a.txt"));
+        assert(has(evs, notify::event_kind::Modify, "a.txt"));
+        assert(has(evs, notify::event_kind::Rename, "b.txt"));
 #ifdef _WIN32
         // ReadDirectoryChangesW reports moves across directories as remove/add.
-        assert(has(evs, notify::EventKind::Remove, "b.txt"));
-        assert(has(evs, notify::EventKind::Create, "c.txt"));
+        assert(has(evs, notify::event_kind::Remove, "b.txt"));
+        assert(has(evs, notify::event_kind::Create, "c.txt"));
 #else
-        assert(has(evs, notify::EventKind::RenameFrom, "b.txt"));
-        assert(has(evs, notify::EventKind::RenameTo, "c.txt"));
+        assert(has(evs, notify::event_kind::RenameFrom, "b.txt"));
+        assert(has(evs, notify::event_kind::RenameTo, "c.txt"));
 #endif
-        assert(has(evs, notify::EventKind::Remove, "c.txt"));
+        assert(has(evs, notify::event_kind::Remove, "c.txt"));
 
         // unwatch -> no more events; double unwatch -> error
-        watcher.unwatch("./" + fs::relative(w).string());
+        watcher.unwatch("./w");
         std::ofstream(w / "ignored.txt") << "x";
         assert(drain(watcher).empty());
-        std::error_code ec;
-        watcher.unwatch(w, ec);
-        assert(ec);
+        bool threw = false;
+        try { watcher.unwatch(w); } catch (const fs::filesystem_error&) { threw = true; }
+        assert(threw);
 
         // single-file watch
         std::ofstream(dir / "outside" / "f.txt") << "1";
         watcher.watch(dir / "outside" / "f.txt");
         std::ofstream(dir / "outside" / "f.txt", std::ios::app) << "2";
         auto fevs = drain(watcher);
-        assert(has(fevs, notify::EventKind::Modify, "f.txt"));
+        assert(has(fevs, notify::event_kind::Modify, "f.txt"));
 
-        // nonexistent path -> error code
-        watcher.watch(dir / "nope", ec);
-        assert(ec);
-        std::cout << "missing path error: " << ec.message() << '\n';
+        // nonexistent path -> throws
+        threw = false;
+        try {
+            watcher.watch(dir / "nope");
+        } catch (const fs::filesystem_error& e) {
+            threw = true;
+            std::cout << "missing path error: " << e.code().message() << '\n';
+        }
+        assert(threw);
     }
 
     // Moving a Watcher keeps delivering into the same queue; blocking receive() works.
     {
-        notify::Watcher original;
+        notify::watcher original;
         original.watch(w);
-        notify::Watcher moved = std::move(original);
+        notify::watcher moved = std::move(original);
         std::ofstream(w / "moved.txt") << "x";
-        notify::Result r = moved.receive();
+        notify::result r = moved.receive();
         assert(r && r.event().paths.at(0).filename() == "moved.txt");
         (void)moved.receive_for(0ms);  // zero timeout = non-blocking poll
     }
 
+    fs::current_path(old_cwd);
     fs::remove_all(dir);
     std::cout << "ALL OK\n";
 }
