@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 4.3)
 project(plum LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 26)
+if (MSVC)
+    # CMake has no C++26 flag for MSVC yet; C++23 there means /std:c++latest.
+    set(CMAKE_CXX_STANDARD 23)
+else ()
+    set(CMAKE_CXX_STANDARD 26)
+endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PLUM_BUILD_TESTS "Build the journal library tests" ON)
