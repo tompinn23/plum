@@ -46,14 +46,14 @@ struct error {
 // Equivalent of notify's `Result<Event>`.
 class result {
 public:
-    explicit result(event e) : v_(std::move(e)) {}
-    explicit result(error e) : v_(std::move(e)) {}
+    explicit result(notify::event e) : v_(std::move(e)) {}
+    explicit result(notify::error e) : v_(std::move(e)) {}
 
     [[nodiscard]] bool ok() const noexcept { return std::holds_alternative<notify::event>(v_); }
     explicit operator bool() const noexcept { return ok(); }
 
-    [[nodiscard]] const event& event() const { return std::get<notify::event>(v_); }
-    [[nodiscard]] const error& error() const { return std::get<notify::error>(v_); }
+    [[nodiscard]] const notify::event& event() const { return std::get<notify::event>(v_); }
+    [[nodiscard]] const notify::error& error() const { return std::get<notify::error>(v_); }
 
 private:
     std::variant<notify::event, notify::error> v_;

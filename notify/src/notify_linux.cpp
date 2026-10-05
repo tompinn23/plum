@@ -33,7 +33,7 @@ std::error_code last_error() { return {errno, std::system_category()}; }
 
 }  // namespace
 
-struct Watcher::Impl {
+struct watcher::Impl {
     explicit Impl(Handler handler) : handler_(std::move(handler)) {
         inotify_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
         if (inotify_fd_ < 0) throw std::system_error(last_error(), "inotify_init1");
@@ -93,7 +93,7 @@ private:
             int n = ::poll(fds, 2, pending_from_ ? kRenamePairTimeoutMs : -1);
             if (n < 0) {
                 if (errno == EINTR) continue;
-                handler_(Error{last_error(), {}});
+                handler_(result{error{last_error(), {}}});
                 return;
             }
             if (n == 0) {  // rename partner didn't show up
@@ -111,7 +111,7 @@ private:
                 if (len < 0) {
                     if (errno == EINTR) continue;
                     if (errno == EAGAIN) break;
-                    handler_(Error{last_error(), {}});
+                    handler_(result{error{last_error(), {}}});
                     return;
                 }
                 for (char* p = buffer; p < buffer + len;) {
@@ -126,7 +126,7 @@ private:
     void handle(const inotify_event& ev) {
         if (ev.mask & IN_Q_OVERFLOW) {
             flush_rename();
-            handler_(make_event(EventKind::Other, {}, ModifyKind::Any, /*need_rescan=*/true));
+            handler_(result(make_event(event_kind::Other, {}, modify_kind::Any, /*need_rescan=*/true)));
             return;
         }
 
@@ -156,21 +156,21 @@ private:
             if (pending_from_) {
                 fs::path from = std::move(pending_from_->second);
                 pending_from_.reset();
-                handler_(make_event(EventKind::Rename, {std::move(from), std::move(path)}));
+                handler_(result(make_event(event_kind::Rename, {std::move(from), std::move(path)})));
             } else {
-                handler_(make_event(EventKind::RenameTo, {std::move(path)}));
+                handler_(result(make_event(event_kind::RenameTo, {std::move(path)})));
             }
         } else if (ev.mask & IN_CREATE) {
-            handler_(make_event(EventKind::Create, {std::move(path)}));
+            handler_(result(make_event(event_kind::Create, {std::move(path)})));
         } else if (ev.mask & (IN_DELETE | IN_DELETE_SELF)) {
-            handler_(make_event(EventKind::Remove, {std::move(path)}));
+            handler_(result(make_event(event_kind::Remove, {std::move(path)})));
         } else if (ev.mask & IN_MODIFY) {
-            handler_(make_event(EventKind::Modify, {std::move(path)}, ModifyKind::Data));
+            handler_(result(make_event(event_kind::Modify, {std::move(path)}, modify_kind::Data)));
         } else if (ev.mask & IN_ATTRIB) {
-            handler_(make_event(EventKind::Modify, {std::move(path)}, ModifyKind::Metadata));
+            handler_(result(make_event(event_kind::Modify, {std::move(path)}, modify_kind::Metadata)));
         } else if (ev.mask & IN_MOVE_SELF) {
             // The watched item itself was moved; inotify doesn't say where to.
-            handler_(make_event(EventKind::RenameFrom, {std::move(path)}));
+            handler_(result(make_event(event_kind::RenameFrom, {std::move(path)})));
         }
     }
 
@@ -178,7 +178,7 @@ private:
         if (!pending_from_) return;
         fs::path from = std::move(pending_from_->second);
         pending_from_.reset();
-        handler_(make_event(EventKind::RenameFrom, {std::move(from)}));
+        handler_(result(make_event(event_kind::RenameFrom, {std::move(from)})));
     }
 
     Handler handler_;

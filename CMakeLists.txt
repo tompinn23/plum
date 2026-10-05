@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 4.3)
 project(plum LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 26)
+if (MSVC)
+    # CMake has no C++26 flag for MSVC yet; C++23 there means /std:c++latest.
+    set(CMAKE_CXX_STANDARD 23)
+else ()
+    set(CMAKE_CXX_STANDARD 26)
+endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PLUM_BUILD_TESTS "Build the journal library tests" ON)
@@ -59,10 +64,11 @@ endif ()
 
 if (PLUM_BUILD_TESTS)
     CPMAddPackage("gh:doctest/doctest@2.4.12")
+    enable_testing()
 endif ()
 
 set(NOTIFY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(NOTIFY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(NOTIFY_BUILD_TESTS ${PLUM_BUILD_TESTS} CACHE BOOL "" FORCE)
 
 
 add_subdirectory(notify)
@@ -70,7 +76,7 @@ add_subdirectory(journal)
 
 # ── Application ─────────────────────────────────────────────────────────────
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
 qt_standard_project_setup()
 
 qt_add_executable(plum
@@ -94,9 +100,6 @@ target_link_libraries(plum PRIVATE Qt6::Widgets journal spdlog::spdlog)
 set_target_properties(plum PROPERTIES WIN32_EXECUTABLE ON)
 plum_copy_runtime_dlls(plum)
 
-
-
-
 # Copy the Qt runtime next to the executable so it runs straight from the IDE.
 if (WIN32 AND TARGET Qt6::windeployqt)
     add_custom_command(TARGET plum POST_BUILD
@@ -104,3 +107,18 @@ if (WIN32 AND TARGET Qt6::windeployqt)
             --no-system-d3d-compiler --no-opengl-sw "$<TARGET_FILE:plum>"
             COMMENT "Deploying Qt runtime")
 endif ()
+
+# ── Install / packaging ─────────────────────────────────────────────────────
+# `cmake --install <build> --prefix <dir>` produces a self-contained app: the
+# executable, sqlite3 and the Qt libraries/plugins it needs (windeployqt on Windows).
+
+install(TARGETS plum sqlite3
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+qt_generate_deploy_app_script(
+        TARGET plum
+        OUTPUT_SCRIPT plum_deploy_script
+        NO_TRANSLATIONS
+)
+install(SCRIPT ${plum_deploy_script})
