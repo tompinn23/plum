@@ -3,31 +3,46 @@
 QMainWindow, QWidget { background: #0d0d0d; color: #e6e6e6; }
 QLabel { font-family: 'IBM Plex Mono'; font-size: 11px; background: transparent; }
 
-/* ---- Sidebar ---------------------------------------------------------- */
+/* ---- Buttons ---------------------------------------------------------- */
+
+QPushButton {
+    background: #262626; color: #d0d0d0;
+    border: none; border-radius: 0px; outline: none;
+    font-family: 'IBM Plex Mono'; font-size: 11px;
+    padding: 5px 14px; min-width: 56px;
+}
+QPushButton:hover { background: #303030; color: #f0b040; }
+QPushButton:pressed { background: #f0b040; color: #0d0d0d; }
+QPushButton:default { color: #f0b040; }
+QPushButton:disabled { background: #1a1a1a; color: #5a5a5a; }
+
+/* ---- sidebar ---------------------------------------------------------- */
 
 QWidget#sidebar { background: #1e1e1e; border-right: 1px solid #383838; }
 
-QPushButton#navButton {
+/* A continuous strip with an accent edge, so it keeps square corners. */
+QPushButton#nav_button {
     background: #1e1e1e; color: #8a8a8a;
-    border: none; border-left: 2px solid transparent; border-right: 1px solid #383838;
+    border: none; border-radius: 0; min-width: 0;
+    border-left: 2px solid transparent; border-right: 1px solid #383838;
     font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: bold;
     text-align: left; padding: 10px 12px;
 }
-QPushButton#navButton:hover { color: #f0b040; background: #262626; }
-QPushButton#navButton:checked { color: #f0b040; border-left: 2px solid #f0b040; background: #2a2a2a; }
+QPushButton#nav_button:hover { color: #f0b040; background: #262626; }
+QPushButton#nav_button:checked { color: #f0b040; border-left: 2px solid #f0b040; background: #2a2a2a; }
 
 /* ---- Panes ------------------------------------------------------------ */
 
 QFrame#panel { background: #0d0d0d; border: 1px solid #2a2a2a; }
-QWidget#panelHeader { background: #222222; border-bottom: 1px solid #0d0d0d; }
-QLabel#panelTitle { color: #f0b040; font-weight: bold; }
-QWidget#panelBody { background: #1a1a1a; }
-QWidget#fieldRow { background: transparent; }
+QWidget#panel_header { background: #222222; border-bottom: 1px solid #0d0d0d; }
+QLabel#panel_title { color: #f0b040; font-weight: bold; }
+QWidget#panel_body { background: #1a1a1a; }
+QWidget#field_row { background: transparent; }
 
-QLabel#fieldName { color: #8a8a8a; }
-QLabel#fieldValue { color: #f0f0f0; }
-QLabel#fieldValue[accent="true"] { color: #f0b040; }
-QLabel#sectionLabel {
+QLabel#field_name { color: #8a8a8a; }
+QLabel#field_value { color: #f0f0f0; }
+QLabel#field_value[accent="true"] { color: #f0b040; }
+QLabel#section_label {
     color: #8a8a8a; font-weight: bold;
     border-bottom: 1px solid #3a3a3a; padding-top: 4px;
 }
@@ -35,10 +50,50 @@ QLabel#sectionLabel {
 QProgressBar { background: #0d0d0d; border: none; }
 QProgressBar::chunk { background: #f0b040; }
 
+/* ---- Toasts over the game -------------------------------------------- */
+
+QWidget#toasts { background: transparent; }
+QLabel#toast {
+    background: rgba(13, 13, 13, 215); color: #e6e6e6;
+    border-left: 2px solid #8a8a8a; padding: 8px 12px;
+}
+QLabel#toast[kind="good"] { border-left-color: #f0b040; }
+QLabel#toast[kind="warning"] { border-left-color: #e06050; }
+
+/* ---- Dialogs ---------------------------------------------------------- */
+
+QLabel#dialog_heading {
+    color: #f0b040; font-size: 13px; font-weight: bold;
+    border-bottom: 1px solid #f0b040; padding-bottom: 4px;
+}
+
+QTableWidget {
+    background: #1a1a1a; color: #d0d0d0; border: 1px solid #2a2a2a;
+    font-family: 'IBM Plex Mono'; font-size: 11px;
+    selection-background-color: #262626; selection-color: #f0b040;
+}
+QTableWidget::item { padding: 2px 6px; border-bottom: 1px solid #222222; }
+QHeaderView::section {
+    background: #161616; color: #8a8a8a; border: none; border-bottom: 1px solid #2a2a2a;
+    font-family: 'IBM Plex Mono'; font-size: 10px; padding: 4px 6px;
+}
+QWidget#cell_host { background: transparent; }
+
+QPushButton#add_button { background: #1e1e1e; color: #f0b040; border: 1px solid #f0b040; padding: 4px 12px; }
+QPushButton#add_button:hover { background: #2a2200; }
+
+QPushButton#link_button {
+    background: #1e1e1e; color: #44cc88; border: 1px solid #44cc88;
+    padding: 1px 8px; min-width: 0; font-size: 10px;
+}
+QPushButton#link_button:hover { background: #002a1a; }
+QPushButton#link_button[linked="true"] { color: #8a8a8a; border-color: #383838; }
+QPushButton#link_button[linked="true"]:hover { background: #1a1a1a; color: #44cc88; border-color: #44cc88; }
+
 /* ---- Chrome ----------------------------------------------------------- */
 
-QWidget#statusBar { background: #0a0a0a; border-top: 1px solid #2a2a2a; }
-QLabel#statusText { color: #8a8a8a; }
+QWidget#status_bar { background: #0a0a0a; border-top: 1px solid #2a2a2a; }
+QLabel#status_text { color: #8a8a8a; }
 
 QMenuBar { background: #0a0a0a; color: #9a9a9a; border-bottom: 1px solid #383838;
            font-family: 'IBM Plex Mono'; font-size: 11px; padding: 1px 0; }

@@ -21,7 +21,7 @@ endif ()
 include(cmake/CPM.cmake)
 
 CPMAddPackage("gh:nlohmann/json@3.12.0")
-
+CPMAddPackage("gh:marzer/tomlplusplus@3.4.0")
 CPMAddPackage(
         NAME spdlog
         GITHUB_REPOSITORY gabime/spdlog
@@ -29,7 +29,6 @@ CPMAddPackage(
         OPTIONS "SPDLOG_USE_STD_FORMAT ON"
 )
 
-# SQLite ships as a single-file amalgamation with no CMake of its own.
 CPMAddPackage(
         NAME sqlite3
         VERSION 3.50.4
@@ -76,28 +75,39 @@ add_subdirectory(journal)
 
 # ── Application ─────────────────────────────────────────────────────────────
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.10 REQUIRED COMPONENTS Widgets NetworkAuth)
 qt_standard_project_setup()
 
 qt_add_executable(plum
         main.cpp
-        src/Format.h
-        src/MainWindow.cpp src/MainWindow.h
-        src/Sidebar.cpp src/Sidebar.h
-        src/Dashboard.cpp src/Dashboard.h
-        src/dashboards/CommanderDashboard.cpp src/dashboards/CommanderDashboard.h
-        src/dashboards/ShipDashboard.cpp src/dashboards/ShipDashboard.h
-)
+        src/main_window.cpp src/include/main_window.hpp
+        src/sidebar.cpp src/include/sidebar.hpp
+        src/dashboard.cpp src/include/dashboard.hpp
+        src/dashboards/commander_dashboard.cpp src/dashboards/commander_dashboard.hpp
+        src/dashboards/carrier_dashboard.cpp src/dashboards/carrier_dashboard.hpp
+        src/dashboards/event_log_dashboard.cpp src/dashboards/event_log_dashboard.hpp
+        src/journal_dialog.cpp src/include/journal_dialog.hpp
+        src/journal_sources.cpp src/include/journal_sources.hpp
+        src/notifications.cpp src/include/notifications.hpp
+        src/toast_overlay.cpp src/include/toast_overlay.hpp
+        src/client.cpp src/include/client.hpp
+        src/config.cpp src/include/config.hpp
+        src/commodities.cpp src/include/commodities.hpp)
 
 qt_add_resources(plum "resources"
         PREFIX "/"
         FILES
         resources/theme.qss
+        resources/commodity.csv
 )
 
-target_include_directories(plum PRIVATE src)
-target_link_libraries(plum PRIVATE Qt6::Widgets journal spdlog::spdlog)
+target_include_directories(plum PRIVATE src/include)
+target_link_libraries(plum PRIVATE Qt6::Widgets Qt6::NetworkAuth journal spdlog::spdlog tomlplusplus::tomlplusplus)
 set_target_properties(plum PROPERTIES WIN32_EXECUTABLE ON)
+
+# Issued by Frontier for the Companion API. Empty: the Link buttons explain there is none.
+set(PLUM_CAPI_CLIENT_ID "" CACHE STRING "Frontier Companion API client id")
+target_compile_definitions(plum PRIVATE PLUM_CAPI_CLIENT_ID="${PLUM_CAPI_CLIENT_ID}")
 plum_copy_runtime_dlls(plum)
 
 # Copy the Qt runtime next to the executable so it runs straight from the IDE.

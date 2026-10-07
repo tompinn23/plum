@@ -1,38 +1,38 @@
-#include "Sidebar.h"
+#include "include/sidebar.hpp"
 
 #include <QPushButton>
 #include <QVBoxLayout>
 
-Sidebar::Sidebar(QWidget *parent) : QWidget(parent), m_layout(new QVBoxLayout(this)) {
+sidebar::sidebar(QWidget *parent) : QWidget(parent), layout(new QVBoxLayout(this)) {
     setObjectName("sidebar");
     setAttribute(Qt::WA_StyledBackground);
     setFixedWidth(110);
 
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(0);
-    m_layout->addStretch();
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addStretch();
 
-    m_group.setExclusive(true);
-    connect(&m_group, &QButtonGroup::idClicked, this, &Sidebar::currentIndexChanged);
+    group.setExclusive(true);
+    connect(&group, &QButtonGroup::idClicked, this, &sidebar::current_changed);
 }
 
-int Sidebar::addEntry(const QString &label) {
-    const int index = static_cast<int>(m_group.buttons().size());
+int sidebar::add_entry(const QString &label) {
+    const int index = static_cast<int>(group.buttons().size());
 
     auto *button = new QPushButton(label.toUpper(), this);
-    button->setObjectName("navButton");
+    button->setObjectName("nav_button");
     button->setCheckable(true);
     button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     if (index < 9)
         button->setShortcut(QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_1 + index)));
 
-    m_group.addButton(button, index);
+    group.addButton(button, index);
     // Insert before the trailing stretch so buttons stack from the top.
-    m_layout->insertWidget(m_layout->count() - 1, button);
+    layout->insertWidget(layout->count() - 1, button);
     return index;
 }
 
-void Sidebar::setCurrentIndex(int index) {
-    if (auto *button = m_group.button(index))
+void sidebar::set_current(const int index) const {
+    if (auto *button = group.button(index))
         button->setChecked(true);
 }

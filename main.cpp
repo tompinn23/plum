@@ -6,14 +6,27 @@
 #include <QStyleHints>
 #include <QStyleFactory>
 
+#include <cstdio>
+
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include "MainWindow.h"
+#include "src/include/main_window.hpp"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
-QFont pickMonospaceFont() {
+QFont monospace_font() {
     const QStringList preferred{"IBM Plex Mono", "Cascadia Mono", "Consolas"};
     const QStringList available = QFontDatabase::families();
     for (const QString &family : preferred) {
@@ -27,10 +40,10 @@ QFont pickMonospaceFont() {
     return QFontDatabase::systemFont(QFontDatabase::FixedFont);
 }
 
-void applyDarkTheme(QApplication &app) {
+void dark_theme(QApplication &app) {
     // Also darkens the native Windows title bar.
     QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
-    app.setStyle(QStyleFactory::create("Fusion"));
+    QApplication::setStyle(QStyleFactory::create("Fusion"));
 
     QPalette p;
     p.setColor(QPalette::Window, QColor(0x0d, 0x0d, 0x0d));
@@ -54,31 +67,76 @@ void applyDarkTheme(QApplication &app) {
         app.setStyleSheet(QString::fromUtf8(qss.readAll()));
 }
 
-// A GUI app has no console, so diagnostics go to plum.log beside the history store.
-void setupLogging() {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    QDir().mkpath(dir);
+// A GUI app starts without a console. Output it was already given (an IDE's pipe, a redirect) is
+// kept; otherwise it writes to the terminal that started it, or in a debug build, a console of its
+// own. Before setup_logging: spdlog's console sink takes the handle when it is made.
+void attach_console() {
+#ifdef _WIN32
+    if (GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) != FILE_TYPE_UNKNOWN) return;
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+#ifdef NDEBUG
+        return;
+#else
+        if (!AllocConsole()) return;
+#endif
+    }
+    const HANDLE out = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   nullptr, OPEN_EXISTING, 0, nullptr);
+    if (out == INVALID_HANDLE_VALUE) return;
+    SetStdHandle(STD_OUTPUT_HANDLE, out);
+    SetStdHandle(STD_ERROR_HANDLE, out);
+    FILE *stream = nullptr;
+    freopen_s(&stream, "CONOUT$", "w", stdout);
+    freopen_s(&stream, "CONOUT$", "w", stderr);
+#endif
+}
+
+// Qt's own warnings (network, OAuth, style sheets) into the same log.
+void qt_to_spdlog(QtMsgType type, const QMessageLogContext &, const QString &message) {
+    const std::string text = message.toStdString();
+    switch (type) {
+        case QtDebugMsg: spdlog::debug("qt: {}", text); break;
+        case QtInfoMsg: spdlog::info("qt: {}", text); break;
+        case QtWarningMsg: spdlog::warn("qt: {}", text); break;
+        case QtCriticalMsg:
+        case QtFatalMsg: spdlog::error("qt: {}", text); break;
+    }
+}
+
+// Diagnostics go to the console, when there is one, and to plum.log beside the history store.
+void setup_logging() {
+    const auto dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    if (!QDir().mkpath(dir)) {
+
+    }
     try {
-        auto logger = spdlog::basic_logger_mt("plum", (dir + "/plum.log").toStdString(), true);
-        logger->flush_on(spdlog::level::info);
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console_sink->set_level(spdlog::level::debug);
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((dir + "/plum.log").toStdString(), true);
+        file_sink->set_level(spdlog::level::info);
+
+        auto logger = std::make_shared<spdlog::logger>("plum", spdlog::sinks_init_list{console_sink, file_sink});
+        logger->set_level(spdlog::level::debug);
+
         spdlog::set_default_logger(std::move(logger));
     } catch (const spdlog::spdlog_ex &) {
-        // Keep the default console logger.
     }
 }
 
 } // namespace
 
 int main(int argc, char *argv[]) {
+    attach_console();
     QApplication app(argc, argv);
     QApplication::setApplicationName("Plum");
     QApplication::setOrganizationName("Plum");
-    setupLogging();
+    setup_logging();
+    qInstallMessageHandler(qt_to_spdlog);
 
-    QApplication::setFont(pickMonospaceFont());
-    applyDarkTheme(app);
+    QApplication::setFont(monospace_font());
+    dark_theme(app);
 
-    MainWindow window;
+    main_window window;
     window.resize(1280, 800);
     window.show();
 

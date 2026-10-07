@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "journal/game_event.hpp"
@@ -14,79 +15,93 @@
 #include "journal/sql.hpp"
 
 namespace journal {
+    // The ingest side of one commander's history. Used only on the ingest thread, where several
+    // feeds may share it: the same commander can play from more than one journal directory.
+    //
+    // Calls come in file order per feed: begin_file, record*, checkpoint. Each feed keeps its own
+    // batch, and a checkpoint commits it, so a transaction never outlives the ingest task that
+    // opened it and feeds sharing a store cannot see each other's half-written files.
+    //
+    // Events are kept in game-time order: each journal is placed by its Fileheader time, and lines
+    // within it by offset. Journals usually arrive in that order, but not always (an older directory
+    // added later, a backup restored, two directories scanned side by side). Events that land before
+    // ones already stored mark the store for resequence(), which renumbers the ledger and replays
+    // every projection from it. Until then projections skip them rather than fold them in wrongly.
+    //
+    // A default-constructed store is disabled: every call is a no-op and history() is disabled.
+    class history_store {
+    public:
+        // One journal being written by one feed.
+        struct batch {
+            std::int64_t file = -1; // -1: none open
+            std::uint64_t watermark = 0;
+            bool late = false; // older than something already stored
+            std::int64_t last_seq = 0;
+        };
 
-// The ingest side of one commander's history, as a feed sees it. Used only on the ingest thread.
-//
-// Calls come in file order: begin_file, record*, checkpoint. A checkpoint commits everything
-// since the last one. The file being tailed is checkpointed repeatedly and only marked complete
-// when the game moves on to a new one.
-//
-// A store holds exactly one commander, the one it is bound to. The feed attributes each file
-// before ingesting it and calls skip() for anyone else's, so projections see one commander's
-// events because that is all there is.
-//
-// A default-constructed store is disabled: every call is a no-op and history() is disabled.
-class history_store {
-public:
-    history_store();
+        history_store();
 
-    // Opens or creates the store, migrating and catching projections up as needed.
-    // Throws history_error if it cannot.
-    history_store(const std::filesystem::path& file, const history_config& config);
+        // Opens or creates the store, migrating and catching projections up as needed, and finishing
+        // a resequence an earlier run was stopped before. Throws history_error if it cannot.
+        history_store(const std::filesystem::path &file, const history_config &config);
 
-    history_store(history_store&&) noexcept;
-    history_store& operator=(history_store&&) noexcept;
-    ~history_store();
+        history_store(history_store &&) noexcept;
 
-    [[nodiscard]] bool enabled() const { return db_.has_value(); }
+        history_store &operator=(history_store &&) noexcept;
 
-    // The FID of the commander this store holds, if bound.
-    [[nodiscard]] const std::optional<std::string>& commander() const { return commander_fid_; }
+        ~history_store();
 
-    // Binds to a commander unless already bound. Permanent: a store that followed whoever played
-    // most recently would discard its history every time an alt was launched.
-    void bind(const std::string& fid, const std::string& name);
+        [[nodiscard]] bool enabled() const { return db_.has_value(); }
 
-    // Whether a file is wholly accounted for (ingested, or skipped as someone else's), so the scan
-    // need not open it. This is what makes the second launch fast.
-    [[nodiscard]] bool ingested(const std::string& file, std::uint64_t size);
+        // Records who this store belongs to, for display. The latest name wins: commanders can rename.
+        void identify(const std::optional<std::string> &fid, const std::string &name);
 
-    // Records that a file belongs to another commander, so later launches skip it unread.
-    void skip(const std::string& file, std::uint64_t size, const std::optional<std::string>& owner);
+        // Whether a file is wholly stored, so the scan need not open it. This is what makes the
+        // second launch fast.
+        [[nodiscard]] bool ingested(const std::string &file, std::uint64_t size);
 
-    // Opens a batch for a journal. Lines below the returned offset are already stored and are
-    // ignored by record(), so a partly ingested file can simply be re-read from the start.
-    std::uint64_t begin_file(const std::string& file, const std::optional<std::string>& owner);
+        // Opens a batch for a journal that began at `started` (ISO 8601 UTC). Lines below the
+        // batch's watermark are already stored and are ignored by record(), so a partly ingested
+        // file can simply be re-read from the start.
+        batch begin_file(const std::string &file, const std::string &started);
 
-    // Adds one line to the ledger and to every interested projection.
-    void record(const game_event& event, std::string_view line, std::uint64_t offset);
+        // Adds one line to the ledger and, unless it is late, to every interested projection.
+        void record(batch &b, const game_event &event, std::string_view line, std::uint64_t offset);
 
-    // Commits everything since the last checkpoint and records how far into the file it reached.
-    void checkpoint(std::uint64_t bytes, bool complete);
+        // Commits everything since the last checkpoint and records how far into the file it reached.
+        void checkpoint(batch &b, std::uint64_t bytes, bool complete);
 
-    // Abandons the current batch, e.g. after an unreadable file.
-    void abort();
+        // Abandons a batch, e.g. after an unreadable file.
+        void abort(batch &b);
 
-    [[nodiscard]] journal::history history() const;
+        // Whether late events are waiting for resequence().
+        [[nodiscard]] bool unordered() const { return unordered_; }
 
-    // Commits anything open and closes the connection, leaving the store disabled.
-    void close();
+        // Renumbers the ledger in game-time order and rebuilds every projection from it.
+        void resequence();
 
-private:
-    struct statements;
+        [[nodiscard]] journal::history history() const;
 
-    std::optional<sql::database> db_;
-    std::filesystem::path file_;
-    std::vector<std::shared_ptr<projection>> projections_;
-    std::set<std::string> recorded_;
-    std::unordered_map<std::string, std::vector<projection*>> by_event_;
-    std::vector<projection*> for_all_events_;
-    std::unique_ptr<statements> stmts_;
+        // Closes the connection, abandoning anything uncommitted, and leaves the store disabled.
+        void close();
 
-    std::optional<std::string> commander_fid_;
-    std::int64_t file_id_ = -1;  // -1: no batch open
-    std::uint64_t watermark_ = 0;
-    std::int64_t last_seq_ = 0;
-};
+    private:
+        struct statements;
 
-}  // namespace journal
+        void begin();
+
+        void commit();
+
+        std::optional<sql::database> db_;
+        std::filesystem::path file_;
+        std::vector<std::shared_ptr<projection> > projections_;
+        std::set<std::string> recorded_;
+        std::unordered_map<std::string, std::vector<projection *> > by_event_;
+        std::vector<projection *> for_all_events_;
+        std::unique_ptr<statements> stmts_;
+
+        // The latest (started, name) of any journal holding events. A batch for one before it is late.
+        std::pair<std::string, std::string> newest_;
+        bool unordered_ = false;
+    };
+} // namespace journal

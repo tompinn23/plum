@@ -22,12 +22,12 @@ using detail::make_event;
 
 namespace {
 
-constexpr std::uint32_t kWatchMask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_ATTRIB |
+constexpr std::uint32_t watch_mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_ATTRIB |
                                      IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE_SELF |
                                      IN_MOVE_SELF | IN_EXCL_UNLINK;
 
 // How long to wait for the IN_MOVED_TO half of a rename before reporting RenameFrom.
-constexpr int kRenamePairTimeoutMs = 10;
+constexpr int rename_pair_timeout_ms = 10;
 
 std::error_code last_error() { return {errno, std::system_category()}; }
 
@@ -66,7 +66,7 @@ struct watcher::Impl {
         // Hold the lock across inotify_add_watch so the worker can't see events for
         // the new descriptor before we've recorded which path it belongs to.
         std::lock_guard<std::mutex> lock(mutex_);
-        int wd = inotify_add_watch(inotify_fd_, path.c_str(), kWatchMask);
+        int wd = inotify_add_watch(inotify_fd_, path.c_str(), watch_mask);
         if (wd < 0) return last_error();
         by_wd_[wd] = path;
         by_path_[path.native()] = wd;
@@ -90,7 +90,7 @@ private:
         pollfd fds[2] = {{inotify_fd_, POLLIN, 0}, {wake_fd_, POLLIN, 0}};
 
         for (;;) {
-            int n = ::poll(fds, 2, pending_from_ ? kRenamePairTimeoutMs : -1);
+            int n = ::poll(fds, 2, pending_from_ ? rename_pair_timeout_ms : -1);
             if (n < 0) {
                 if (errno == EINTR) continue;
                 handler_(result{error{last_error(), {}}});

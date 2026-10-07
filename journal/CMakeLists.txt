@@ -1,5 +1,6 @@
 # Journal parsing and history. Plain C++: no Qt.
 add_library(journal STATIC
+        src/archive.cpp
         src/feed.cpp
         src/game_event.cpp
         src/history_store.cpp
@@ -11,7 +12,17 @@ add_library(journal STATIC
         src/projections/ledger.cpp
         src/projections/mission_log.cpp
         src/projections/visited_system.cpp
+        src/projections/massacre.cpp
 )
+if (WIN32)
+    target_sources(journal PRIVATE src/game_process_windows.cpp)
+    target_compile_definitions(journal PRIVATE UNICODE _UNICODE)
+    target_link_libraries(journal PRIVATE advapi32)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(journal PRIVATE src/game_process_linux.cpp)
+else ()
+    message(FATAL_ERROR "journal supports Linux and Windows only")
+endif ()
 target_include_directories(journal PUBLIC include PRIVATE src)
 target_compile_features(journal PUBLIC cxx_std_23)
 target_link_libraries(journal

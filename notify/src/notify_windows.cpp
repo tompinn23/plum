@@ -31,16 +31,16 @@ using detail::make_event;
 namespace {
 
 // Completion keys. Watch keys are WatchState pointers, which are never 1 or 2.
-constexpr ULONG_PTR kCommandKey = 1;
-constexpr ULONG_PTR kQuitKey = 2;
+constexpr ULONG_PTR command_key = 1;
+constexpr ULONG_PTR quit_key = 2;
 
-constexpr DWORD kNotifyFilter =
+constexpr DWORD notify_filter =
     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES |
     FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION |
     FILE_NOTIFY_CHANGE_SECURITY;
 
 // 64 KiB is the maximum ReadDirectoryChangesW accepts for network shares.
-constexpr DWORD kBufferBytes = 64 * 1024;
+constexpr DWORD buffer_bytes = 64 * 1024;
 
 std::error_code win_error(const DWORD code) { return {static_cast<int>(code), std::system_category()}; }
 
@@ -55,7 +55,7 @@ struct WatchState {
     std::wstring file_filter;  // set when watching a single file: only report this name
     HANDLE handle = INVALID_HANDLE_VALUE;
     OVERLAPPED overlapped{};
-    std::unique_ptr<DWORD[]> buffer{new DWORD[kBufferBytes / sizeof(DWORD)]};  // DWORD-aligned
+    std::unique_ptr<DWORD[]> buffer{new DWORD[buffer_bytes / sizeof(DWORD)]};  // DWORD-aligned
     bool pending = false;  // a read is in flight; buffer/overlapped must stay alive
     bool closing = false;  // cancelled; free when its completion arrives
 
@@ -88,7 +88,7 @@ struct watcher::Impl {
     }
 
     ~Impl() {
-        PostQueuedCompletionStatus(port_, 0, kQuitKey, nullptr);
+        PostQueuedCompletionStatus(port_, 0, quit_key, nullptr);
         worker_.join();
         CloseHandle(port_);
     }
@@ -103,7 +103,7 @@ private:
 
         Command cmd{.op = op, .path = path, .done = {}};
         auto result = cmd.done.get_future();
-        if (!PostQueuedCompletionStatus(port_, 0, kCommandKey, reinterpret_cast<LPOVERLAPPED>(&cmd)))
+        if (!PostQueuedCompletionStatus(port_, 0, command_key, reinterpret_cast<LPOVERLAPPED>(&cmd)))
             return win_error(GetLastError());
         return result.get();
     }
@@ -125,13 +125,13 @@ private:
                 return;
             }
 
-            if (key == kCommandKey) {
+            if (key == command_key) {
                 auto* cmd = reinterpret_cast<Command*>(overlapped);
                 cmd->done.set_value(execute(cmd->op, cmd->path));  // cmd may be gone after this
                 continue;
             }
 
-            if (key == kQuitKey) {
+            if (key == quit_key) {
                 stopping_ = true;
                 for (auto &val: watches_ | std::views::values) retire(std::move(val));
                 watches_.clear();
@@ -194,8 +194,8 @@ private:
 
     static std::error_code issue_read(WatchState& w) {
         w.overlapped = OVERLAPPED{};
-        if (!ReadDirectoryChangesW(w.handle, w.buffer.get(), kBufferBytes, /*bWatchSubtree=*/FALSE,
-                                   kNotifyFilter, nullptr, &w.overlapped, nullptr)) {
+        if (!ReadDirectoryChangesW(w.handle, w.buffer.get(), buffer_bytes, /*bWatchSubtree=*/FALSE,
+                                   notify_filter, nullptr, &w.overlapped, nullptr)) {
             w.pending = false;
             return win_error(GetLastError());
         }
