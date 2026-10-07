@@ -220,6 +220,7 @@ namespace journal {
                 if (s.step()) newest_ = {s.text(0), s.text(1)};
             }
             db_->exec("COMMIT");
+            spdlog::debug("history store {} open{}", files::utf8(file), unordered_ ? "; needs resequencing" : "");
 
             stmts_ = std::make_unique<statements>(statements{
                 db_->prepare("INSERT INTO event(ts, name, payload, file, byte_offset) "
@@ -321,6 +322,7 @@ namespace journal {
             // The same journal found in a second directory keeps the time it was first stored under.
             const std::pair<std::string, std::string> key{s.text(2), file};
             b.late = key < newest_;
+            spdlog::trace("ingesting {} from byte {}{}", file, b.watermark, b.late ? ", out of order" : "");
             newest_ = std::max(newest_, key);
             return b;
         } catch (const sql::error &e) {
@@ -352,6 +354,7 @@ namespace journal {
                 // Folding it in now would put it after events that happened later. The resequence
                 // replays everything in order instead.
                 if (!unordered_) {
+                    spdlog::info("history store {} got an older journal; it will be resequenced", files::utf8(file_));
                     set_meta(*db_, key_unordered, "1");
                     unordered_ = true;
                 }
@@ -394,6 +397,7 @@ namespace journal {
 
     void history_store::abort(batch &b) {
         if (!db_ || b.file < 0) return;
+        spdlog::debug("abandoning history batch for file {}", b.file);
         b.file = -1;
         if (!db_->in_transaction()) return;
         try {

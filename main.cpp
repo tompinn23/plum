@@ -2,17 +2,21 @@
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QStyleFactory>
+#include <QSysInfo>
 
+#include <chrono>
 #include <cstdio>
 
+#include <spdlog/cfg/env.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include "src/include/main_window.hpp"
+#include "main_window.hpp"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -91,36 +95,59 @@ void attach_console() {
 #endif
 }
 
-// Qt's own warnings (network, OAuth, style sheets) into the same log.
-void qt_to_spdlog(QtMsgType type, const QMessageLogContext &, const QString &message) {
+// Qt's own warnings (network, OAuth, style sheets) into the same log, with the category when Qt
+// gives one.
+void qt_to_spdlog(QtMsgType type, const QMessageLogContext &context, const QString &message) {
     const std::string text = message.toStdString();
+    const std::string_view category = context.category ? context.category : "default";
+    const std::string_view prefix = category == "default" ? "qt" : category;
     switch (type) {
-        case QtDebugMsg: spdlog::debug("qt: {}", text); break;
-        case QtInfoMsg: spdlog::info("qt: {}", text); break;
-        case QtWarningMsg: spdlog::warn("qt: {}", text); break;
+        case QtDebugMsg: spdlog::debug("{}: {}", prefix, text); break;
+        case QtInfoMsg: spdlog::info("{}: {}", prefix, text); break;
+        case QtWarningMsg: spdlog::warn("{}: {}", prefix, text); break;
         case QtCriticalMsg:
-        case QtFatalMsg: spdlog::error("qt: {}", text); break;
+        case QtFatalMsg: spdlog::critical("{}: {}", prefix, text); break;
     }
 }
 
 // Diagnostics go to the console, when there is one, and to plum.log beside the history store.
+// Debug and up by default; SPDLOG_LEVEL=trace (or info, warn...) changes that.
 void setup_logging() {
     const auto dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    if (!QDir().mkpath(dir)) {
-
-    }
+    const bool have_dir = QDir().mkpath(dir);
+    const std::string file = (dir + "/plum.log").toStdString();
+    std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stdout_color_sink_mt>()};
+    std::string file_error;
     try {
-        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console_sink->set_level(spdlog::level::debug);
-        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((dir + "/plum.log").toStdString(), true);
-        file_sink->set_level(spdlog::level::info);
-
-        auto logger = std::make_shared<spdlog::logger>("plum", spdlog::sinks_init_list{console_sink, file_sink});
-        logger->set_level(spdlog::level::debug);
-
-        spdlog::set_default_logger(std::move(logger));
-    } catch (const spdlog::spdlog_ex &) {
+        sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true));
+    } catch (const spdlog::spdlog_ex &e) {
+        file_error = e.what();
     }
+
+    auto logger = std::make_shared<spdlog::logger>("plum", sinks.begin(), sinks.end());
+    logger->set_level(spdlog::level::debug);
+    // Thread ids tell the UI, ingest and window-tracking threads apart.
+    logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%^%l%$] %v");
+    logger->flush_on(spdlog::level::warn);
+    spdlog::set_default_logger(std::move(logger));
+    spdlog::cfg::load_env_levels();
+    spdlog::flush_every(std::chrono::seconds(2));
+
+    if (!have_dir) spdlog::warn("cannot create {}", dir.toStdString());
+    if (!file_error.empty()) spdlog::warn("logging to the console only: {}", file_error);
+    else spdlog::info("logging to {} at level {}", file, spdlog::level::to_string_view(spdlog::get_level()));
+}
+
+void log_environment() {
+    spdlog::info("Plum starting: Qt {} (built against {}), {} {}", qVersion(), QT_VERSION_STR,
+                 QSysInfo::prettyProductName().toStdString(), QSysInfo::currentCpuArchitecture().toStdString());
+    spdlog::info("config in {}", QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation).toStdString());
+    if (const QString dir = qEnvironmentVariable("PLUM_JOURNAL_DIR"); !dir.isEmpty())
+        spdlog::info("PLUM_JOURNAL_DIR={}", dir.toStdString());
+    for (const auto *screen: QGuiApplication::screens())
+        spdlog::debug("screen {}: {}x{} at {},{} scale {}", screen->name().toStdString(), screen->geometry().width(),
+                      screen->geometry().height(), screen->geometry().x(), screen->geometry().y(),
+                      screen->devicePixelRatio());
 }
 
 } // namespace
@@ -132,6 +159,7 @@ int main(int argc, char *argv[]) {
     QApplication::setOrganizationName("Plum");
     setup_logging();
     qInstallMessageHandler(qt_to_spdlog);
+    log_environment();
 
     QApplication::setFont(monospace_font());
     dark_theme(app);
@@ -140,5 +168,7 @@ int main(int argc, char *argv[]) {
     window.resize(1280, 800);
     window.show();
 
-    return QApplication::exec();
+    const int code = QApplication::exec();
+    spdlog::info("Plum exiting with code {}", code);
+    return code;
 }

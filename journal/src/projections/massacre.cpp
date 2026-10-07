@@ -6,6 +6,36 @@ namespace journal {
             const auto raw = e.opt_str("Expiry");
             return raw ? parse_timestamp(*raw) : std::nullopt;
         }
+
+        // Closes every open session with no active missions left, as of when its last one ended.
+        void close_finished(sql::database &db) {
+            db.exec(R"(
+                UPDATE massacre_session
+                   SET ended_at = (SELECT MAX(ended_at) FROM massacre_mission WHERE session = massacre_session.id),
+                       payout = (SELECT SUM(reward) FROM massacre_mission
+                                  WHERE session = massacre_session.id AND status = 'completed')
+                 WHERE ended_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM massacre_mission
+                                    WHERE session = massacre_session.id AND status = 'active'))");
+        }
+
+        // The journal does not reliably write MissionFailed when a mission runs out, so anything past
+        // its expiry counts as failed. Without a stated expiry, a mission is over once it has outlived
+        // the longest a massacre mission lasts: a week for a wing mission, a day otherwise.
+        void expire(sql::database &db, const timestamp now) {
+            db.prepare(R"(
+                UPDATE massacre_mission
+                   SET status = 'failed',
+                       ended_at = CASE WHEN expires_at < :now THEN expires_at ELSE :now END
+                 WHERE status = 'active'
+                   AND (expires_at < :now
+                        OR accepted_at < CASE WHEN wing THEN :wing_cutoff ELSE :solo_cutoff END))")
+                    .bind("now", now)
+                    .bind("wing_cutoff", now - std::chrono::days(7))
+                    .bind("solo_cutoff", now - std::chrono::hours(24))
+                    .run();
+            close_finished(db);
+        }
     } // namespace
 
     std::set<std::string> massacre_projection::events() const {
@@ -39,6 +69,7 @@ namespace journal {
                 reward         INTEGER,
                 wing           INTEGER NOT NULL,
                 status         TEXT    NOT NULL,
+                accepted_at    TEXT    NOT NULL,
                 expires_at     TEXT,
                 ended_at       TEXT
             );
@@ -58,6 +89,8 @@ namespace journal {
 
     void massacre_projection::apply(sql::database &db, std::int64_t seq, const game_event &event) {
         const auto &name = event.name();
+        if (event.time()) expire(db, *event.time());
+
         if (name == "Location" || name == "FSDJump" || name == "CarrierJump") {
             db.prepare(R"(
                 INSERT INTO massacre_position(id, system) VALUES (0, :system)
@@ -110,8 +143,8 @@ namespace journal {
                     .run();
             db.prepare(R"(
             INSERT OR IGNORE INTO massacre_mission(id, seq, session, issuer, target_faction, system,
-                                                   kills_needed, reward, wing, status, expires_at)
-            SELECT :id, :seq, id, :issuer, :target, :system, :needed, :reward, :wing, 'active', :expires
+                                                   kills_needed, reward, wing, status, accepted_at, expires_at)
+            SELECT :id, :seq, id, :issuer, :target, :system, :needed, :reward, :wing, 'active', :ts, :expires
               FROM massacre_session WHERE ended_at IS NULL AND target_faction = :target)")
                     .bind("id", *id)
                     .bind("seq", seq)
@@ -121,6 +154,7 @@ namespace journal {
                     .bind("needed", *needed)
                     .bind("reward", event.opt_long("Reward"))
                     .bind("wing", event.flag("Wing") || mission.starts_with("Mission_MassacreWing"))
+                    .bind("ts", *event.time())
                     .bind("expires", expiry(event))
                     .run();
         } else if (name == "MissionRedirected") {
@@ -140,17 +174,7 @@ namespace journal {
                     .bind("ts", event.time())
                     .bind("reward", event.opt_long("Reward"))
                     .run();
-            // A session ends when its last mission does.
-            db.prepare(R"(
-            UPDATE massacre_session
-               SET ended_at = :ts,
-                   payout = (SELECT SUM(reward) FROM massacre_mission
-                              WHERE session = massacre_session.id AND status = 'completed')
-             WHERE ended_at IS NULL
-               AND NOT EXISTS (SELECT 1 FROM massacre_mission
-                                WHERE session = massacre_session.id AND status = 'active'))")
-                    .bind("ts", event.time())
-                    .run();
+            close_finished(db);
         }
     }
 

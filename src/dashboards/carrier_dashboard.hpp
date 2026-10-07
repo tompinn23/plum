@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../include/dashboard.hpp"
+#include "dashboard.hpp"
 
 class QLabel;
 class QTableWidget;
@@ -11,7 +11,7 @@ class carrier_dashboard : public dashboard {
     Q_OBJECT
 
 public:
-    carrier_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+    carrier_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                       QWidget *parent = nullptr);
 
 private:

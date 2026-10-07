@@ -12,14 +12,14 @@
 
 #include "client.hpp"
 #include "journal_sources.hpp"
-#include "notifications.hpp"
 
 class QActionGroup;
 class QLabel;
 class QMenu;
 class QStackedWidget;
+class game_windows;
 class sidebar;
-class toast_overlay;
+class overlays;
 
 class main_window : public QMainWindow {
     Q_OBJECT
@@ -40,6 +40,8 @@ private:
         // This feed's dashboards, in sidebar order. They subscribe to the feed themselves and stay
         // current while hidden, so switching feeds is only a matter of which set is shown.
         QStackedWidget *pages = nullptr;
+        // What fills this feed's overlays. Gone before the feed's overlay windows and the feed.
+        std::vector<std::unique_ptr<QObject>> overlay_providers;
         // The Companion API for this feed's Frontier account. Null if the build has no client id.
         std::unique_ptr<client> capi;
     };
@@ -78,9 +80,10 @@ private:
     QActionGroup *m_commander_group = nullptr;
     bool m_sidebar_built = false;
 
-    // Before the pages, which post to it, and after them on the way out.
-    notifications m_notes;
-    std::unique_ptr<toast_overlay> m_toasts; // a window of its own, so not a child of this one
+    std::unique_ptr<game_windows> m_windows; // each feed's game window, by feed id
+    // Windows of their own over each game, so not children of this one. Before the pages, which
+    // post notifications to it, and after them on the way out.
+    std::unique_ptr<::overlays> overlays;
 
     std::unique_ptr<journal::journal_service> m_journals;
     std::map<std::string, feed_entry> m_feeds; // keyed by journal_source::id

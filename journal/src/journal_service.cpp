@@ -62,6 +62,7 @@ namespace journal {
             auto [it, inserted] = t->owners.try_emplace(directory);
             if (inserted) {
                 it->second = process::owner_of(directory);
+                if (it->second) spdlog::debug("{} is owned by {}", files::utf8(directory), *it->second);
                 if (!it->second)
                     spdlog::warn("cannot tell who owns {}; any running game will count",
                                  files::utf8(directory));
@@ -70,17 +71,25 @@ namespace journal {
             // A client that could not be inspected is someone else's: our own processes always can be.
             const auto ours = [&](const process::game &g) { return !owner || (g.owner && *g.owner == *owner); };
 
+            const auto pids = [&] {
+                std::vector<std::uint32_t> out;
+                for (const auto &g: t->games)
+                    if (ours(g)) out.push_back(g.pid);
+                return out;
+            };
+
             // Tracked clients are checked by pid, which is cheap; only the gone are dropped.
             std::erase_if(t->games, [](const process::game &g) { return !process::is_game(g.pid); });
-            if (std::ranges::any_of(t->games, ours)) return true;
+            if (auto found = pids(); !found.empty()) return found;
 
             const auto now = std::chrono::steady_clock::now();
-            if (t->last_scan && now - *t->last_scan < game_interval) return false;
+            if (t->last_scan && now - *t->last_scan < game_interval) return std::vector<std::uint32_t>{};
             t->last_scan = now;
             t->games = process::running_games();
+            spdlog::trace("process scan found {} game clients", t->games.size());
             for (const auto &g: t->games)
                 spdlog::debug("game client pid {} owned by {}", g.pid, g.owner.value_or("?"));
-            return std::ranges::any_of(t->games, ours);
+            return pids();
         };
     }
 
@@ -93,13 +102,17 @@ namespace journal {
                     // Costs the history, not the live dashboard.
                     spdlog::error("history disabled: {}", e.what());
                 }
+            } else {
+                spdlog::info("journal service running without history");
             }
             thread = std::thread([this] { run(); });
         }
 
         ~impl() {
+            spdlog::debug("journal service stopping");
             stopping = true;
             thread.join();
+            spdlog::debug("journal service stopped");
         }
 
         void post(std::function<void()> task) {
@@ -139,6 +152,7 @@ namespace journal {
 
             for (const auto &path: e.paths) {
                 if (!files::journal_file::of(path)) continue; // Status.json, Market.json and friends
+                spdlog::trace("journal changed: {}", files::utf8(path));
                 const auto it = by_directory.find(path.parent_path());
                 if (it == by_directory.end()) continue;
                 for (auto &f: it->second) f->on_file_event(path);
@@ -154,6 +168,7 @@ namespace journal {
 
             const auto next = std::ranges::min_element(scanning, {}, [](const auto &f) { return *f->next_scan(); });
             const auto f = *next;
+            spdlog::trace("[{}] scan step ({} feeds scanning)", f->id(), scanning.size());
             run_safely([&] { f->scan_step(); });
 
             // One step per task, so live notifications and other work get a look in between.
@@ -166,15 +181,19 @@ namespace journal {
             post([this] { step_scans(); });
         }
 
-        // Tells each directory's feeds whether the game is running there.
+        // Tells each directory's feeds which game clients are running there.
         void check_game(const fs::path &directory, const std::vector<std::shared_ptr<feed> > &list) {
-            bool running = false;
+            std::vector<std::uint32_t> pids;
             try {
-                running = probe && probe(directory);
+                if (probe) pids = probe(directory);
             } catch (const std::exception &e) {
                 spdlog::warn("cannot tell whether the game is running for {}: {}", files::utf8(directory), e.what());
             }
-            for (const auto &f: list) f->set_game_running(running);
+            // Pids first, so anything reacting to the game starting can already find its window.
+            for (const auto &f: list) {
+                f->set_game_pids(pids);
+                f->set_game_running(!pids.empty());
+            }
         }
 
         void check_games() {
@@ -192,6 +211,7 @@ namespace journal {
             auto last_poll = std::chrono::steady_clock::now();
             auto last_rollover = last_poll;
             auto last_game = last_poll;
+            spdlog::debug("journal ingest thread started");
 
             while (!stopping) {
                 while (auto r = watcher.receive_for(0ms)) dispatch(*r);
@@ -220,6 +240,7 @@ namespace journal {
                 for (auto &[_, f]: feeds) f->shutdown();
             }
             if (history) history->close();
+            spdlog::debug("journal ingest thread finished");
         }
 
         std::optional<history_config> config;
@@ -253,6 +274,7 @@ namespace journal {
         if (const auto it = impl_->feeds.find(id); it != impl_->feeds.end()) return it->second;
 
         // Watch before anything is read, so a write landing during the scan is already caught.
+        spdlog::info("[{}] watching {}", id, files::utf8(dir));
         impl_->watcher.watch(dir);
 
         auto *i = impl_.get();
@@ -320,12 +342,14 @@ namespace journal {
         if (it == impl_->feeds.end()) return;
         auto f = std::move(it->second);
         impl_->feeds.erase(it);
+        spdlog::info("[{}] closing", id);
 
         impl_->tasks.push_back([i = impl_.get(), f] {
             const fs::path &dir = f->directory();
             if (auto list = i->by_directory.find(dir); list != i->by_directory.end()) {
                 std::erase(list->second, f);
                 if (list->second.empty()) {
+                    spdlog::debug("no longer watching {}", files::utf8(dir));
                     i->by_directory.erase(list);
                     try {
                         i->watcher.unwatch(dir);

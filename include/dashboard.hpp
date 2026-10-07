@@ -3,8 +3,9 @@
 #include <QLocale>
 #include <QWidget>
 
+#include "feed_subscriber.hpp"
 #include "journal/journal_service.hpp"
-#include "notifications.hpp"
+#include "overlays.hpp"
 
 
 class QLabel;
@@ -79,19 +80,14 @@ private:
     const dashboard *owner;
 };
 
-class dashboard : public QWidget {
+class dashboard : public QWidget, public feed_subscriber {
     Q_OBJECT
 
 public:
-    explicit dashboard(QString title, const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+    explicit dashboard(QString title, const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                        QWidget *parent = nullptr);
 
     [[nodiscard]] QString title() const { return _title; }
-
-    // Not a journal event: sent once, to handlers that subscribe to it, when the feed has finished
-    // reading history, so a page can paint from state() and history() whether or not the game is
-    // running. A handler subscribed after that gets it straight away.
-    static constexpr auto ready = "Ready";
 
     // Adds to the notification feed. Labelled with this feed's commander unless the poster says
     // otherwise.
@@ -100,20 +96,8 @@ public:
 protected:
     [[nodiscard]] panel *add_panel(const QString &title, int colidx) const;
 
-    using handler_fn = std::function<void(const journal::game_state &, const journal::game_event &)>;
-
-    void subscribe(std::set<std::string> events, handler_fn handler);
-
-    [[nodiscard]] journal::commander_feed &feed() const { return *this->data; }
-
 private:
-    void become_ready();
-
     QString _title;
     QSplitter *columns;
-    std::shared_ptr<journal::commander_feed> data;
-    std::vector<journal::subscription> subs;
-    std::vector<handler_fn> ready_handlers; // until the feed is ready
-    bool is_ready = false;
-    notifications &notes;
+    overlays &notes; // where notifications go
 };

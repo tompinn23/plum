@@ -1,11 +1,9 @@
 #include "client.hpp"
 
-#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QHostAddress>
 #include <QNetworkReply>
 #include <QOAuthHttpServerReplyHandler>
-#include <QPointer>
 
 #include <chrono>
 
@@ -15,6 +13,8 @@ namespace {
     const QUrl authorize_url("https://auth.frontierstore.net/auth");
     const QUrl token_url("https://auth.frontierstore.net/token");
     const QString api_host = QStringLiteral("https://companion.orerve.net");
+    // Docking again at the same station within this long asks the API nothing new.
+    constexpr auto docked_cooldown = std::chrono::seconds(90);
 
     // What the browser shows once Frontier sends it back to us. Qt wraps it in <body>, so the style
     // comes along inside it. It is the same page whether or not the sign-in went through, and the app
@@ -41,7 +41,7 @@ namespace {
 } // namespace
 
 client::client(const QString &client_id, const std::shared_ptr<journal::commander_feed> &feed, QObject *parent)
-    : QObject(parent), data(feed) {
+    : QObject(parent), feed_subscriber(this, feed) {
     flow.setNetworkAccessManager(&network);
     flow.setAuthorizationUrl(authorize_url);
     flow.setTokenUrl(token_url);
@@ -59,8 +59,12 @@ client::client(const QString &client_id, const std::shared_ptr<journal::commande
     // Access tokens last a few hours; renew them before they run out.
     flow.setAutoRefresh(true);
 
-    connect(&flow, &QAbstractOAuth::authorizeWithBrowser, this, &QDesktopServices::openUrl);
+    connect(&flow, &QAbstractOAuth::authorizeWithBrowser, this, [this](const QUrl &url) {
+        spdlog::info("[{}] opening Frontier sign-in in the browser", this->feed()->id());
+        if (!QDesktopServices::openUrl(url)) spdlog::warn("[{}] cannot open the browser", this->feed()->id());
+    });
     connect(&flow, &QAbstractOAuth::granted, this, [this] {
+        spdlog::info("[{}] Frontier account {}", this->feed()->id(), renewing ? "renewed" : "signed in");
         renewing = false;
         stop_listening();
         watch();
@@ -69,14 +73,20 @@ client::client(const QString &client_id, const std::shared_ptr<journal::commande
     connect(&flow, &QAbstractOAuth::requestFailed, this, [this](QAbstractOAuth::Error error) {
         // A saved token that no longer works: sign in properly instead.
         if (renewing) {
+            spdlog::info("[{}] saved Frontier token rejected (error {}); signing in again", this->feed()->id(),
+                         static_cast<int>(error));
             renewing = false;
             sign_in();
             return;
         }
+        spdlog::warn("[{}] Frontier sign-in failed (error {})", this->feed()->id(), static_cast<int>(error));
         stop_listening();
         emit failed(QStringLiteral("Frontier sign-in failed (error %1)").arg(static_cast<int>(error)));
     });
-    connect(&flow, &QAbstractOAuth2::refreshTokenChanged, this, &client::refresh_token_changed);
+    connect(&flow, &QAbstractOAuth2::refreshTokenChanged, this, [this](const QString &token) {
+        spdlog::debug("[{}] refresh token {}", this->feed()->id(), token.isEmpty() ? "cleared" : "changed");
+        emit refresh_token_changed(token);
+    });
 }
 
 void client::authorize(const QString &refresh_token) {
@@ -84,6 +94,7 @@ void client::authorize(const QString &refresh_token) {
         sign_in();
         return;
     }
+    spdlog::info("[{}] renewing saved Frontier token", feed()->id());
     renewing = true;
     flow.setRefreshToken(refresh_token);
     flow.refreshTokens();
@@ -96,9 +107,11 @@ void client::sign_in() {
     redirect = new QOAuthHttpServerReplyHandler(QHostAddress::LocalHost, 0, this);
     if (!redirect->isListening()) {
         stop_listening();
+        spdlog::warn("[{}] cannot listen for the sign-in redirect", feed()->id());
         emit failed(QStringLiteral("cannot listen for Frontier's sign-in redirect"));
         return;
     }
+    spdlog::debug("[{}] listening for the sign-in redirect on {}", feed()->id(), redirect->callback().toStdString());
     redirect->setCallbackText(callback_page);
     flow.setReplyHandler(redirect);
     flow.grant();
@@ -120,6 +133,7 @@ void client::send(const QString &path, reply_fn done, bool retried) {
     request.setRawHeader("Authorization", "Bearer " + flow.token().toUtf8());
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Plum"));
 
+    spdlog::debug("[{}] companion API GET {}{}", feed()->id(), path.toStdString(), retried ? " (retry)" : "");
     auto *reply = network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, path, done = std::move(done), retried] {
         reply->deleteLater();
@@ -127,6 +141,7 @@ void client::send(const QString &path, reply_fn done, bool retried) {
 
         // The token has lapsed or been revoked: renew it once and try again.
         if (status == 401 && !retried) {
+            spdlog::info("[{}] companion API {}: token rejected; renewing", feed()->id(), path.toStdString());
             auto retry = std::make_shared<QMetaObject::Connection>();
             auto give_up = std::make_shared<QMetaObject::Connection>();
             const auto disconnect_both = [retry, give_up] {
@@ -148,22 +163,10 @@ void client::send(const QString &path, reply_fn done, bool retried) {
         if (reply->error() != QNetworkReply::NoError && status == 0)
             spdlog::warn("companion API {}: {}", path.toStdString(), reply->errorString().toStdString());
         const QByteArray body = reply->readAll();
+        spdlog::debug("[{}] companion API {}: status {}, {} bytes", feed()->id(), path.toStdString(), status,
+                      body.size());
         done(status, journal::json::parse(body.begin(), body.end(), nullptr, false));
     });
-}
-
-void client::subscribe(const std::set<std::string> &events,
-                       std::function<void(const journal::game_state &, const journal::game_event &)> handler) {
-    subs.push_back(data->subscribe(events,
-                                   [guard = QPointer(this), feed = std::weak_ptr(data), handler = std::move(handler)](
-                               const journal::game_event &e, journal::phase) {
-                                       const auto f = feed.lock();
-                                       if (!f) return;
-                                       auto state = f->state();
-                                       QMetaObject::invokeMethod(qApp, [guard, handler, state = std::move(state), e] {
-                                           if (guard) handler(*state, e);
-                                       }, Qt::QueuedConnection);
-                                   }));
 }
 
 // Once signed in: the station's market and shipyard on docking, and the fleet carrier every 15
@@ -172,8 +175,18 @@ void client::subscribe(const std::set<std::string> &events,
 void client::watch() {
     if (watching) return;
     watching = true;
+    spdlog::info("[{}] watching for docking and carrier events", feed()->id());
 
-    subscribe({"Docked"}, [this](const journal::game_state &, const journal::game_event &) {
+    subscribe({"Docked"}, [this](const journal::game_state &, const journal::game_event &e) {
+        const auto market = e.opt_long("MarketID");
+        const auto now = std::chrono::steady_clock::now();
+        if (market && market == last_docked_market && now - last_docked_at < docked_cooldown) {
+            spdlog::debug("[{}] docked at {} again within {}s; companion API not asked", feed()->id(), *market,
+                          docked_cooldown.count());
+            return;
+        }
+        last_docked_market = market;
+        last_docked_at = now;
         fetch(QStringLiteral("/market"));
         fetch(QStringLiteral("/shipyard"));
     });
@@ -196,8 +209,10 @@ void client::watch() {
 void client::fetch_carrier() {
     fetch(QStringLiteral("/fleetcarrier"), [this](const int status) {
         if (status == 204) {
+            if (carrier_timer.isActive()) spdlog::info("[{}] no fleet carrier; polling stopped", feed()->id());
             carrier_timer.stop();
         } else if (!carrier_timer.isActive()) {
+            spdlog::info("[{}] polling the fleet carrier every 15 minutes", feed()->id());
             carrier_timer.start(std::chrono::minutes(15));
         }
     });
@@ -207,7 +222,7 @@ void client::fetch_carrier() {
 // "/market" arrives as CAPIMarket, "/fleetcarrier" as CAPIFleetcarrier. Stamped now, since the
 // response carries no time of its own. `then`, if given, hears the status either way.
 void client::fetch(const QString &path, std::function<void(int status)> then) {
-    get(path, [feed = std::weak_ptr(data), path, then = std::move(then)](const int status, const journal::json &body) {
+    get(path, [feed = std::weak_ptr(this->feed()), path, then = std::move(then)](const int status, const journal::json &body) {
         if (then) then(status);
         if (status != 200 || !body.is_object()) {
             if (status != 204) spdlog::warn("companion API {}: status {}", path.toStdString(), status);
@@ -222,6 +237,7 @@ void client::fetch(const QString &path, std::function<void(int status)> then) {
         payload["event"] = "CAPI" + name.toStdString();
         payload["timestamp"] =
                 journal::format_timestamp(std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
+        spdlog::debug("[{}] injecting {}", f->id(), payload["event"].get<std::string>());
         f->inject(journal::game_event(std::move(payload)));
     });
 }

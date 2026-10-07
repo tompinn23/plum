@@ -32,14 +32,14 @@ using namespace std::chrono_literals;
 
 namespace {
     // For tests that are not about the game: whether Elite happens to be running here is irrelevant.
-    const game_probe no_game = [](const fs::path &) { return false; };
+    const game_probe no_game = [](const fs::path &) { return std::vector<std::uint32_t>{}; };
 
     // A probe the test switches on and off.
     struct fake_game {
         std::shared_ptr<std::atomic<bool> > up = std::make_shared<std::atomic<bool> >(false);
 
         [[nodiscard]] game_probe probe() const {
-            return [up = up](const fs::path &) { return up->load(); };
+            return [up = up](const fs::path &) { return up->load() ? std::vector<std::uint32_t>{1} : std::vector<std::uint32_t>{}; };
         }
     };
 
@@ -659,6 +659,39 @@ TEST_CASE (
     journal_service service(std::nullopt, no_game);
     started_feed f(service, "cmdr", dir.path);
     CHECK(f.feed->state()->credits == 1'000 + 500 - 100 + 15 - 15);
+}
+
+TEST_CASE (
+
+"a ship's Loadout becomes its SLEF, and a ship swap drops it"
+)
+ {
+    temp_dir dir("slef");
+    write(dir.path, "Journal.2024-01-02T030405.01.log",
+          session("Main", 1'000) +
+              R"({"timestamp":"2024-01-02T03:05:00Z","event":"Loadout","Ship":"python","ShipID":3,"ShipName":"Lore","ShipIdent":"LO-01","HullValue":100,"ModulesValue":200,"UnladenMass":350.5,"CargoCapacity":64,"MaxJumpRange":20.5,"FuelCapacity":{"Main":32.0,"Reserve":0.83},"Rebuy":15,"Modules":[{"Slot":"MediumHardpoint1","Item":"Hpt_PulseLaser_Gimbal_Medium","On":true,"Priority":0,"AmmoInClip":1,"AmmoInHopper":1,"Health":1.0}]}
+)");
+
+    journal_service service(std::nullopt, no_game);
+    started_feed f(service, "cmdr", dir.path);
+    REQUIRE(f.feed->state()->slef);
+    const auto slef = nlohmann::json::parse(*f.feed->state()->slef);
+    REQUIRE(slef.size() == 1);
+    CHECK(slef[0]["header"]["appName"] == "plum");
+    CHECK(slef[0]["header"]["appVersion"].is_string());
+    const auto &data = slef[0]["data"];
+    CHECK(data["Ship"] == "python");
+    CHECK(data["ShipName"] == "Lore");
+    CHECK(data["FuelCapacity"]["Reserve"] == 0.83);
+    CHECK(data["Modules"][0]["Item"] == "Hpt_PulseLaser_Gimbal_Medium");  // as written, not canonicalised
+    CHECK(data["Modules"][0]["AmmoInClip"] == 1);
+    CHECK_FALSE(data.contains("event"));
+    CHECK_FALSE(data.contains("ShipID"));
+
+    append(dir.path / "Journal.2024-01-02T030405.01.log",
+           R"({"timestamp":"2024-01-02T03:06:00Z","event":"ShipyardSwap","ShipType":"sidewinder","ShipID":4}
+)");
+    CHECK(wait_until([&] { return !f.feed->state()->slef; }));
 }
 
 TEST_CASE (

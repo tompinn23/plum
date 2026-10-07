@@ -34,7 +34,7 @@ namespace {
     }
 } // namespace
 
-carrier_dashboard::carrier_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+carrier_dashboard::carrier_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                                      QWidget *parent)
     : ::dashboard("Carrier", feed, notes, parent) {
     carrier = add_panel("CARRIER", 0);
@@ -121,7 +121,7 @@ carrier_dashboard::carrier_dashboard(const std::shared_ptr<journal::commander_fe
 }
 
 void carrier_dashboard::paint_history() const {
-    const auto h = feed().history();
+    const auto h = feed()->history();
     if (!h.enabled()) return;
 
     std::optional<journal::carrier_projection::carrier> info;

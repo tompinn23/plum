@@ -95,7 +95,7 @@ namespace {
     }
 } // namespace
 
-commander_dashboard::commander_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+commander_dashboard::commander_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                                          QWidget *parent)
     : ::dashboard("Commander", feed, notes, parent) {
     cmdr = add_panel("CMDR", 0);
@@ -181,7 +181,7 @@ commander_dashboard::commander_dashboard(const std::shared_ptr<journal::commande
               [this](const journal::game_state &s, const journal::game_event &e) {
                   // The state keeps the last session as it was; only the event, or the game not
                   // running once history is read, says it is over.
-                  const bool offline = e.name() == "Shutdown" || (e.name() == ready && !this->feed().game_running());
+                  const bool offline = e.name() == "Shutdown" || (e.name() == ready && !this->feed()->game_running());
                   activity->setText(offline
                                         ? "Offline"
                                         : s.on_foot
@@ -258,7 +258,7 @@ commander_dashboard::commander_dashboard(const std::shared_ptr<journal::commande
                   "MissionCompleted", "MissionFailed", "MissionAbandoned", "CarrierBankTransfer"
               },
               [this](const journal::game_state &, const journal::game_event &) {
-                  const auto h = this->feed().history();
+                  const auto h = this->feed()->history();
                   if (!h.enabled()) return;
                   try {
                       using missions_log = journal::mission_log_projection;

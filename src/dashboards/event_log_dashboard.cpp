@@ -215,7 +215,7 @@ namespace {
     }
 } // namespace
 
-event_log_dashboard::event_log_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+event_log_dashboard::event_log_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                                          QWidget *parent)
     : ::dashboard("Event log", feed, notes, parent), log(new QTableWidget(0, 2)) {
     log->setHorizontalHeaderLabels({"Time", "Event"});

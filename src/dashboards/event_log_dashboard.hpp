@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../include/dashboard.hpp"
+#include "dashboard.hpp"
 
 class QTableWidget;
 
@@ -10,7 +10,7 @@ class event_log_dashboard : public dashboard {
     Q_OBJECT
 
 public:
-    event_log_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+    event_log_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                         QWidget *parent = nullptr);
 
 private:

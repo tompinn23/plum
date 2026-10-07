@@ -1,7 +1,10 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -15,11 +18,13 @@
 #include <journal/game_event.hpp>
 #include <journal/journal_service.hpp>
 
+#include "feed_subscriber.hpp"
+
 class QOAuthHttpServerReplyHandler;
 
 // Frontier's Companion API: signing in to an account (OAuth 2 with PKCE, through the browser) and
 // requests against it.
-class client : public QObject {
+class client : public QObject, public feed_subscriber {
     Q_OBJECT
 
 public:
@@ -38,11 +43,6 @@ public:
     using reply_fn = std::function<void(int status, const journal::json & body)>;
 
     void get(const QString &path, reply_fn done);
-
-    // Live events from this client's feed, handed to `handler` on the UI thread with the state
-    // as it stood after them. Lasts as long as the client.
-    void subscribe(const std::set<std::string> &events,
-                   std::function<void(const journal::game_state &, const journal::game_event &)> handler);
 
     signals:
 
@@ -71,8 +71,10 @@ private:
     QOAuthHttpServerReplyHandler *redirect = nullptr; // only while signing in through the browser
     bool renewing = false; // a refresh that falls back to the browser
 
-    std::shared_ptr<journal::commander_feed> data;
-    std::vector<journal::subscription> subs;
     QTimer carrier_timer; // /fleetcarrier, polled while the commander has a carrier
     bool watching = false;
+
+    // The station last docked at, and when, so docking there again soon after is not asked twice.
+    std::optional<std::int64_t> last_docked_market;
+    std::chrono::steady_clock::time_point last_docked_at;
 };

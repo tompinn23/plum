@@ -37,6 +37,16 @@ namespace journal {
             if ((it->second += delta) <= 0) map.erase(it);
         }
 
+        // The Loadout's fit as EDMC exports it: its fields as the game wrote them, under a header.
+        std::string slef_from(const json &loadout) {
+            json data = json::object();
+            for (const char *key: {"Ship", "ShipName", "ShipIdent", "HullValue", "ModulesValue", "Rebuy",
+                                   "MaxJumpRange", "UnladenMass", "CargoCapacity", "FuelCapacity", "Modules"}) {
+                if (const auto it = loadout.find(key); it != loadout.end()) data[key] = *it;
+            }
+            return json::array({{{"header", {{"appName", "plum"}, {"appVersion", PLUM_VERSION}}}, {"data", std::move(data)}}}).dump();
+        }
+
         int count(const json &row, std::string_view key) {
             return static_cast<int>(field::num(row, key, 0));
         }
@@ -308,6 +318,7 @@ namespace journal {
             s.modules_value.reset();
             s.rebuy.reset();
             s.modules.clear();
+            s.slef.reset();
             // The old ship can be sold as part of the purchase.
             s.credits += event.num("SellPrice") - event.num("ShipPrice");
         } else if (name == "ShipyardSwap") {
@@ -320,6 +331,7 @@ namespace journal {
             s.modules_value.reset();
             s.rebuy.reset();
             s.modules.clear();
+            s.slef.reset();
         } else if (name == "CarrierStats") {
             const std::string callsign = event.str("Callsign");
             carrier_callsigns_[event.num("CarrierID")] = callsign;
@@ -366,6 +378,7 @@ namespace journal {
                     }
                     s.modules[m.slot] = std::move(m);
                 }
+                s.slef = slef_from(event.payload());
             }
         } else if (name == "ModuleBuy") {
             ship_module m;

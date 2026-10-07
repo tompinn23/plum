@@ -137,6 +137,8 @@ namespace journal {
         std::optional<double> max_jump_range;
         std::optional<fuel_tanks> fuel_capacity;
         std::map<std::string, ship_module> modules; // keyed by slot
+        // The last Loadout as a SLEF document (Ship Loadout Exchange Format), for EDSY, Coriolis and Inara.
+        std::optional<std::string> slef;
 
         // Flags
         bool is_docked = false;

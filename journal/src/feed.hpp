@@ -101,6 +101,8 @@ namespace journal {
 
         [[nodiscard]] bool game_running() const override { return game_running_.load(); }
 
+        [[nodiscard]] std::vector<std::uint32_t> game_pids() const override;
+
         void inject(game_event event) override;
 
         void start() override;
@@ -117,6 +119,8 @@ namespace journal {
         void poll(bool check_rollover);
 
         void set_game_running(bool running);
+
+        void set_game_pids(std::vector<std::uint32_t> pids);
 
         void shutdown();
 
@@ -164,6 +168,7 @@ namespace journal {
 
         std::atomic<bool> started_{false};
         std::atomic<bool> game_running_{false};
+        std::atomic<std::shared_ptr<const std::vector<std::uint32_t> > > game_pids_;
         // The store of whoever is playing here: the owner of the journal being tailed, or before
         // that, whoever this directory last saw. Null without history, or until anyone is known.
         std::atomic<std::shared_ptr<const std::filesystem::path> > store_file_;

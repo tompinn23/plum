@@ -25,6 +25,7 @@ else ()
 endif ()
 target_include_directories(journal PUBLIC include PRIVATE src)
 target_compile_features(journal PUBLIC cxx_std_23)
+target_compile_definitions(journal PRIVATE PLUM_VERSION="${PLUM_VERSION}")
 target_link_libraries(journal
         PUBLIC nlohmann_json::nlohmann_json
         PRIVATE sqlite3 notify spdlog::spdlog

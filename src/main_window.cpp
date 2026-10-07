@@ -1,4 +1,4 @@
-#include "include/main_window.hpp"
+#include "main_window.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -14,13 +14,16 @@
 
 #include <spdlog/spdlog.h>
 
-#include "include/dashboard.hpp"
+#include "dashboard.hpp"
 #include "dashboards/carrier_dashboard.hpp"
+#include "dashboards/massacre_dashboard.hpp"
 #include "dashboards/commander_dashboard.hpp"
 #include "dashboards/event_log_dashboard.hpp"
-#include "include/journal_dialog.hpp"
-#include "include/sidebar.hpp"
-#include "toast_overlay.hpp"
+#include "journal_dialog.hpp"
+#include "sidebar.hpp"
+#include "overlays.hpp"
+#include "game_windows.hpp"
+#include "overlays/station_info.hpp"
 
 constexpr auto FRONTIER_CAPI_CLIENTID = "5758c1f5-e107-4b47-ac1f-a4c2b855acdd";
 
@@ -37,11 +40,8 @@ main_window::main_window(QWidget *parent)
     setMinimumSize(1100, 650);
     build_menu();
 
-    // Over the game only while it runs; otherwise the notifications just collect in the hub.
-    m_toasts = std::make_unique<toast_overlay>(m_notes, [this] {
-        return std::ranges::any_of(
-            m_feeds, [](const auto &f) { return f.second.feed && f.second.feed->game_running(); });
-    });
+    m_windows = std::make_unique<game_windows>();
+    overlays = std::make_unique<::overlays>(*m_windows);
 
     // Status bar sits under the dashboards only, so the sidebar runs full height.
     auto *status_bar = new QWidget;
@@ -79,19 +79,22 @@ main_window::main_window(QWidget *parent)
 // Pages go first, taking their subscriptions with them; then the service, so its thread cannot
 // post into a window being torn down.
 main_window::~main_window() {
+    spdlog::debug("main window closing {} feeds", m_feeds.size());
     for (auto &[id, entry]: m_feeds) delete entry.pages;
     m_feeds.clear();
+    overlays.reset();
+    m_windows.reset();
     m_journals.reset();
-    m_toasts.reset();
 }
 
 // Every feed gets the same pages in the same order, since the sidebar indexes into whichever set
 // is shown. Add new dashboards here.
 QStackedWidget *main_window::make_pages(const std::shared_ptr<journal::commander_feed> &feed) {
     auto *pages = new QStackedWidget;
-    pages->addWidget(new commander_dashboard(feed, m_notes));
-    pages->addWidget(new carrier_dashboard(feed, m_notes));
-    pages->addWidget(new event_log_dashboard(feed, m_notes));
+    pages->addWidget(new commander_dashboard(feed, *overlays));
+    pages->addWidget(new carrier_dashboard(feed, *overlays));
+    pages->addWidget(new massacre_dashboard(feed, *overlays));
+    pages->addWidget(new event_log_dashboard(feed, *overlays));
 
     // The first set decides the sidebar; the rest match it.
     if (!m_sidebar_built) {
@@ -106,6 +109,7 @@ QStackedWidget *main_window::make_pages(const std::shared_ptr<journal::commander
 void main_window::set_active(const std::string &id) {
     const auto it = m_feeds.find(id);
     if (it == m_feeds.end() || !it->second.pages) return;
+    if (m_active != id) spdlog::info("[{}] showing {}", id, display_name(it->second).toStdString());
     m_active = id;
     m_sets->setCurrentWidget(it->second.pages);
     show_page(m_page);
@@ -114,6 +118,7 @@ void main_window::set_active(const std::string &id) {
 
 // The sidebar picks the page within the active feed's set.
 void main_window::show_page(const int index) {
+    if (m_page != index) spdlog::debug("page {} selected", index);
     m_page = index;
     const auto it = m_feeds.find(m_active);
     if (it == m_feeds.end() || !it->second.pages) return;
@@ -125,6 +130,7 @@ void main_window::show_page(const int index) {
 void main_window::start_journals() {
     const QString history_directory =
             QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/plum/history";
+    spdlog::info("starting journal service; history in {}", history_directory.toStdString());
 
     try {
         m_journals = std::make_unique<journal::journal_service>(
@@ -165,13 +171,18 @@ void main_window::edit_journal_sources() {
             QMessageBox::information(&dialog, "Link Frontier account",
                                      "Save this directory first, then link it.");
         } else {
+            spdlog::info("[{}] linking Frontier account", it->first);
             it->second.capi->authorize();
         }
     });
 
-    if (dialog.exec() != QDialog::Accepted) return;
+    if (dialog.exec() != QDialog::Accepted) {
+        spdlog::debug("journal directories dialog cancelled");
+        return;
+    }
 
     const auto sources = dialog.sources();
+    spdlog::info("journal directories saved: {}", sources.size());
     save_journal_sources(sources);
     apply_journal_sources(sources);
 }
@@ -180,6 +191,7 @@ void main_window::edit_journal_sources() {
 // opens the ones that are new. Feeds whose directory is unchanged keep running untouched.
 void main_window::apply_journal_sources(const std::vector<journal_source> &sources) {
     if (!m_journals) return;
+    spdlog::debug("applying {} journal sources to {} open feeds", sources.size(), m_feeds.size());
 
     for (auto it = m_feeds.begin(); it != m_feeds.end();) {
         const auto wanted = std::ranges::find(sources, QString::fromStdString(it->first), &journal_source::id);
@@ -187,6 +199,7 @@ void main_window::apply_journal_sources(const std::vector<journal_source> &sourc
             ++it;
             continue;
         }
+        spdlog::info("[{}] {}", it->first, wanted == sources.end() ? "removed" : "moved");
         close_feed(it);
         it = m_feeds.erase(it);
     }
@@ -211,6 +224,7 @@ void main_window::apply_journal_sources(const std::vector<journal_source> &sourc
 
 // Pages are deleted now rather than later, so their subscriptions are gone before the feed is.
 void main_window::close_feed(const std::map<std::string, feed_entry>::iterator it) const {
+    spdlog::info("[{}] closing journals in {}", it->first, it->second.source.directory.toStdString());
     auto &entry = it->second;
     if (entry.pages) {
         m_sets->removeWidget(entry.pages);
@@ -219,14 +233,24 @@ void main_window::close_feed(const std::map<std::string, feed_entry>::iterator i
     }
     entry.subscriptions.clear();
     entry.capi.reset();
+    entry.overlay_providers.clear();
+    overlays->remove_feed(it->first);
+    m_windows->untrack(it->first);
     m_journals->close(it->first);
 }
 
+/**
+ * Initializes the commander data sources.
+ * Everything requiring data should be registered here.
+ * @param source
+ */
 void main_window::open_feed(const journal_source &source) {
     const std::string id = source.id.toStdString();
     auto &entry = m_feeds[id];
     entry.source = source;
     entry.commander = journal_commander(source.directory);
+    spdlog::info("[{}] opening journals in {}; last commander there {}", id, source.directory.toStdString(),
+                 entry.commander.toStdString());
 
     try {
         entry.feed = m_journals->open(id, to_path(source.directory));
@@ -241,7 +265,6 @@ void main_window::open_feed(const journal_source &source) {
     }));
 
     entry.capi = std::make_unique<client>(FRONTIER_CAPI_CLIENTID, entry.feed);
-
     // Its own Frontier account, signed in through the journal directories dialog.
     connect(entry.capi.get(), &client::failed, this, [id = source.id](const QString &why) {
         spdlog::warn("[{}] companion API: {}", id.toStdString(), why.toStdString());
@@ -249,7 +272,16 @@ void main_window::open_feed(const journal_source &source) {
     connect(entry.capi.get(), &client::refresh_token_changed, this,
             [id = source.id](const QString &token) { save_refresh_token(id, token); });
     // Signed in before: pick the account up again without the browser.
-    if (const QString token = load_refresh_token(source.id); !token.isEmpty()) entry.capi->authorize(token);
+    if (const QString token = load_refresh_token(source.id); !token.isEmpty()) {
+        entry.capi->authorize(token);
+    } else {
+        spdlog::debug("[{}] no Frontier account linked", id);
+    }
+
+    m_windows->track(id, entry.feed);
+    overlays->add_feed(entry.feed);
+
+    entry.overlay_providers.push_back(std::make_unique<station_overlay>(entry.feed, *overlays, this));
 
     // Built before the feed starts, so the pages hear the StartUp it sends on going live.
     entry.pages = make_pages(entry.feed);
@@ -257,6 +289,7 @@ void main_window::open_feed(const journal_source &source) {
     if (m_active.empty()) set_active(id);
 
     entry.feed->start();
+    spdlog::debug("[{}] feed started with {} pages", id, entry.pages->count());
 }
 
 void main_window::show_progress(const std::string &id, const journal::ingest_progress &progress) {
@@ -265,11 +298,14 @@ void main_window::show_progress(const std::string &id, const journal::ingest_pro
     if (it == m_feeds.end()) return;
 
     const bool newly_live = progress.caught_up() && !(it->second.progress && it->second.progress->caught_up());
+    spdlog::trace("[{}] progress {} {}/{} ({} skipped)", id, journal::to_string(progress.stage), progress.files_done,
+                  progress.files_total, progress.files_skipped);
     it->second.progress = progress;
     update_ingest_status();
 
     // The commander is known by now; label them by it.
     if (newly_live) {
+        spdlog::info("[{}] live as {}", id, display_name(it->second).toStdString());
         update_commander_menu();
         if (id == m_active) show_page(m_page);
     }

@@ -32,7 +32,8 @@ namespace {
     void save_config(config &file) {
         const QString path = config_path();
         QDir().mkpath(QFileInfo(path).absolutePath());
-        if (!file.save(path)) spdlog::error("cannot save {}: {}", path.toStdString(), file.get_error().toStdString());
+        if (file.save(path)) spdlog::debug("saved {}", path.toStdString());
+    else spdlog::error("cannot save {}: {}", path.toStdString(), file.get_error().toStdString());
     }
 } // namespace
 
@@ -59,6 +60,7 @@ std::vector<journal_source> load_journal_sources() {
     // seeded entry keeps its id.
     if (!file.contains(journals_key)) {
         std::vector<journal_source> seeded{{new_journal_source_id(), default_journal_directory()}};
+        spdlog::info("no journal directories configured; using {}", seeded.front().directory.toStdString());
         save_journal_sources(seeded);
         return seeded;
     }
@@ -67,7 +69,12 @@ std::vector<journal_source> load_journal_sources() {
     for (const auto &entry: file.value(journals_key).toList()) {
         const auto table = entry.toMap();
         journal_source source{table.value("id").toString(), table.value("directory").toString()};
-        if (!source.id.isEmpty() && !source.directory.isEmpty()) sources.push_back(std::move(source));
+        if (!source.id.isEmpty() && !source.directory.isEmpty()) {
+            spdlog::debug("journal source {}: {}", source.id.toStdString(), source.directory.toStdString());
+            sources.push_back(std::move(source));
+        } else {
+            spdlog::warn("ignoring a journal source without an id or directory in {}", config_path().toStdString());
+        }
     }
     return sources;
 }
@@ -111,6 +118,7 @@ void save_refresh_token(const QString &id, const QString &token) {
     for (auto &entry: entries) {
         auto table = entry.toMap();
         if (table.value("id").toString() != id) continue;
+        spdlog::debug("[{}] {} refresh token", id.toStdString(), token.isEmpty() ? "forgetting" : "saving");
         if (token.isEmpty())
             table.remove("refresh_token");
         else
@@ -120,4 +128,5 @@ void save_refresh_token(const QString &id, const QString &token) {
         save_config(file);
         return;
     }
+    spdlog::warn("[{}] no journal source to save its refresh token in", id.toStdString());
 }

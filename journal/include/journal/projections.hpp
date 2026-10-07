@@ -150,7 +150,7 @@ namespace journal {
     class massacre_projection : public projection {
     public:
         [[nodiscard]] std::string_view name() const override { return "massacre"; }
-        [[nodiscard]] int version() const override { return 2; }
+        [[nodiscard]] int version() const override { return 3; }
 
         [[nodiscard]] std::set<std::string> events() const override;
 

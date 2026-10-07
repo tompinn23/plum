@@ -59,6 +59,11 @@ QLabel#toast {
 }
 QLabel#toast[kind="good"] { border-left-color: #f0b040; }
 QLabel#toast[kind="warning"] { border-left-color: #e06050; }
+QWidget#station_info { background: transparent; }
+QLabel#station_info {
+    background: rgba(13, 13, 13, 215); color: #e6e6e6;
+    border-left: 2px solid #f0b040; padding: 8px 12px;
+}
 
 /* ---- Dialogs ---------------------------------------------------------- */
 

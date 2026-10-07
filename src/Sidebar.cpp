@@ -1,4 +1,4 @@
-#include "include/sidebar.hpp"
+#include "sidebar.hpp"
 
 #include <QPushButton>
 #include <QVBoxLayout>

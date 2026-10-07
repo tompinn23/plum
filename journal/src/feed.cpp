@@ -95,6 +95,7 @@ namespace journal {
 
     // Onto the ingest thread, so it reaches listeners between journal events rather than among them.
     void feed::inject(game_event event) {
+        spdlog::trace("[{}] {} queued for injection", id_, event.name());
         hooks_.post([weak = weak_from_this(), event = std::move(event)] {
             if (const auto self = weak.lock(); self && !self->stopped_) self->dispatch(event, phase::live);
         });
@@ -106,6 +107,7 @@ namespace journal {
 
     void feed::start() {
         if (started_.exchange(true)) return;
+        spdlog::debug("[{}] starting", id_);
         hooks_.post([self = shared_from_this()] { self->begin_scan(); });
     }
 
@@ -173,6 +175,8 @@ namespace journal {
             if (owner) follow(*owner);
         }
 
+        spdlog::info("[{}] scanning {} journals in {}; state rebuilt from #{}", id_, scan_files_.size(),
+                     files::utf8(directory_), catchup_from_);
         report({phase::history, 0, 0, static_cast<int>(scan_files_.size())});
         scanning_ = true;
         hooks_.scan(shared_from_this());
@@ -205,6 +209,7 @@ namespace journal {
             // every line to rebuild the state; the store discards what it has seen by byte offset.
             // read_from rolls from one file to the next exactly as it does live.
             phase_ = phase::catchup;
+            spdlog::debug("[{}] catching up over the {} newest journals", id_, scan_files_.size() - catchup_from_);
             for (std::size_t i = catchup_from_; i < scan_files_.size(); ++i) read_from(scan_files_[i].path);
             report({phase::catchup, total, scan_skipped_, total});
         }
@@ -238,6 +243,7 @@ namespace journal {
     // Points history() at a commander's store.
     void feed::follow(const std::string &key) {
         if (!archive_ || following_ == key) return;
+        spdlog::info("[{}] following commander {}", id_, key);
         following_ = key;
         archive_->store(key); // opening it brings its projections up to date, journals or not
         store_file_.store(std::make_shared<const fs::path>(archive_->file_for(key)));
@@ -256,9 +262,11 @@ namespace journal {
         store_ = archive_ && owner.key ? archive_->store(*owner.key) : nullptr;
         if (store_ && size &&store_->ingested(name, *size))
         {
+            spdlog::trace("[{}] {} already stored", id_, name);
             store_ = nullptr;
             return true;
         }
+        spdlog::debug("[{}] replaying {} for {}", id_, name, owner.key.value_or("nobody"));
 
         try {
             if (store_) batch_ = store_->begin_file(name, owner.started);
@@ -285,6 +293,7 @@ namespace journal {
     }
 
     void feed::open_file(const files::journal_file &file) {
+        spdlog::info("[{}] reading {}", id_, files::utf8(file.path.filename()));
         current_ = file;
         position_ = 0;
         store_ = nullptr;
@@ -297,6 +306,8 @@ namespace journal {
         if (owner.key) {
             begin_recording(*owner.key, file, owner.started);
         } else {
+            spdlog::debug("[{}] {} names no commander yet; holding its lines", id_,
+                          files::utf8(file.path.filename()));
             awaiting_owner_ = true;
         }
     }
@@ -309,7 +320,13 @@ namespace journal {
         const auto key = archive_->claim(*current_, current_started_, event.opt_str("FID"),
                                          event.str(is_commander ? "Name" : "Commander"));
         auto pending = std::exchange(pending_, {});
-        if (!key) return;
+        if (!key) {
+            spdlog::warn("[{}] {} names no commander after all; not recording it", id_,
+                         files::utf8(current_->path.filename()));
+            return;
+        }
+        spdlog::debug("[{}] {} belongs to {}; recording {} held lines", id_, files::utf8(current_->path.filename()),
+                      *key, pending.size());
 
         begin_recording(*key, *current_, current_started_);
         if (!store_) return;
@@ -321,6 +338,7 @@ namespace journal {
     // Closes out the file being left, marking it complete in its store.
     void feed::close_file() {
         if (!current_) return;
+        spdlog::debug("[{}] done with {} at byte {}", id_, files::utf8(current_->path.filename()), position_);
         if (store_) store_->checkpoint(batch_, position_, true);
         store_ = nullptr;
         awaiting_owner_ = false;
@@ -345,7 +363,10 @@ namespace journal {
             } else if (file->path != current_->path) {
                 // An older file touched (a backup tool, a duplicate notification) must not roll the
                 // state back to a stale session.
-                if (!(*current_ < *file)) return;
+                if (!(*current_ < *file)) {
+                    spdlog::trace("[{}] ignoring older {}", id_, files::utf8(file->path.filename()));
+                    return;
+                }
                 pump(); // drain the superseded file
                 close_file(); // and close it out
                 open_file(*file);
@@ -377,6 +398,7 @@ namespace journal {
     // recovers everything appended in the meantime.
     void feed::on_overflow() {
         if (stopped_ || phase_ != phase::live) return;
+        spdlog::trace("[{}] rescanning {}", id_, files::utf8(directory_));
         try {
             if (const auto newest = files::newest(directory_)) read_from(newest->path);
         } catch (const fs::filesystem_error &e) {
@@ -407,8 +429,12 @@ namespace journal {
         // The store gets the raw line; listeners get the parser's result, which may be enriched.
         // Projections must see what a rebuild from the ledger would reproduce.
         if (awaiting_owner_ && (raw->name() == "Commander" || raw->name() == "LoadGame")) claim_current(*raw);
+        spdlog::trace("[{}] {} {} at {}", id_, to_string(phase_), raw->name(), offset);
         if (awaiting_owner_) {
-            if (pending_.size() < pending_limit) pending_.emplace_back(line, offset);
+            if (pending_.size() < pending_limit) {
+                pending_.emplace_back(line, offset);
+                if (pending_.size() == pending_limit) spdlog::debug("[{}] holding no more lines", id_);
+            }
         } else if (store_) {
             store_->record(batch_, *raw, line, offset);
         }
@@ -446,6 +472,18 @@ namespace journal {
             }
             return;
         }
+    }
+
+    std::vector<std::uint32_t> feed::game_pids() const {
+        const auto pids = game_pids_.load();
+        return pids ? *pids : std::vector<std::uint32_t>{};
+    }
+
+    void feed::set_game_pids(std::vector<std::uint32_t> pids) {
+        std::ranges::sort(pids);
+        if (const auto old = game_pids_.load(); old ? *old == pids : pids.empty()) return;
+        spdlog::debug("[{}] game pids now {}", id_, pids);
+        game_pids_.store(std::make_shared<const std::vector<std::uint32_t> >(std::move(pids)));
     }
 
     // A game launched while being watched restates the session in its own journal, so there is
@@ -498,6 +536,7 @@ namespace journal {
 
     void feed::shutdown() {
         if (stopped_) return;
+        spdlog::debug("[{}] shutting down", id_);
         stopped_ = true;
         scanning_ = false;
         // Every batch is checkpointed within the task that wrote it, so there is nothing to commit;

@@ -9,6 +9,22 @@ else ()
 endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# The version is git's description of the checkout: the nearest tag, or the commit, plus -dirty for
+# uncommitted changes. It is taken at configure time; a commit or checkout reconfigures.
+find_package(Git QUIET)
+set(PLUM_VERSION "unknown")
+if (GIT_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/.git)
+    execute_process(
+            COMMAND ${GIT_EXECUTABLE} describe --tags --always --dirty
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            OUTPUT_VARIABLE PLUM_VERSION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            ${CMAKE_SOURCE_DIR}/.git/HEAD ${CMAKE_SOURCE_DIR}/.git/logs/HEAD)
+endif ()
+message(STATUS "plum version ${PLUM_VERSION}")
+
 option(PLUM_BUILD_TESTS "Build the journal library tests" ON)
 
 # Point CMake at the local Qt install unless the user already supplied one.
@@ -80,19 +96,23 @@ qt_standard_project_setup()
 
 qt_add_executable(plum
         main.cpp
-        src/main_window.cpp src/include/main_window.hpp
-        src/sidebar.cpp src/include/sidebar.hpp
-        src/dashboard.cpp src/include/dashboard.hpp
+        src/main_window.cpp include/main_window.hpp
+        src/sidebar.cpp include/sidebar.hpp
+        src/feed_subscriber.cpp include/feed_subscriber.hpp
+        src/dashboard.cpp include/dashboard.hpp
         src/dashboards/commander_dashboard.cpp src/dashboards/commander_dashboard.hpp
         src/dashboards/carrier_dashboard.cpp src/dashboards/carrier_dashboard.hpp
+        src/dashboards/massacre_dashboard.cpp src/dashboards/massacre_dashboard.hpp
         src/dashboards/event_log_dashboard.cpp src/dashboards/event_log_dashboard.hpp
-        src/journal_dialog.cpp src/include/journal_dialog.hpp
-        src/journal_sources.cpp src/include/journal_sources.hpp
-        src/notifications.cpp src/include/notifications.hpp
-        src/toast_overlay.cpp src/include/toast_overlay.hpp
-        src/client.cpp src/include/client.hpp
-        src/config.cpp src/include/config.hpp
-        src/commodities.cpp src/include/commodities.hpp)
+        src/journal_dialog.cpp include/journal_dialog.hpp
+        src/journal_sources.cpp include/journal_sources.hpp
+        src/overlays.cpp include/overlays.hpp
+        src/game_windows.cpp include/game_windows.hpp
+        src/client.cpp include/client.hpp
+        src/config.cpp include/config.hpp
+        src/commodities.cpp include/commodities.hpp
+        src/overlays/station_info.cpp include/overlays/station_info.hpp
+)
 
 qt_add_resources(plum "resources"
         PREFIX "/"
@@ -101,9 +121,12 @@ qt_add_resources(plum "resources"
         resources/commodity.csv
 )
 
-target_include_directories(plum PRIVATE src/include)
+target_include_directories(plum PRIVATE include)
 target_link_libraries(plum PRIVATE Qt6::Widgets Qt6::NetworkAuth journal spdlog::spdlog tomlplusplus::tomlplusplus)
 set_target_properties(plum PROPERTIES WIN32_EXECUTABLE ON)
+if (WIN32)
+    target_link_libraries(plum PRIVATE dwmapi)
+endif ()
 
 # Issued by Frontier for the Companion API. Empty: the Link buttons explain there is none.
 set(PLUM_CAPI_CLIENT_ID "" CACHE STRING "Frontier Companion API client id")

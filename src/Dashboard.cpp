@@ -1,4 +1,4 @@
-#include "include/dashboard.hpp"
+#include "dashboard.hpp"
 
 #include <QCoreApplication>
 #include <QLabel>
@@ -117,9 +117,10 @@ QLabel *panel::add_section(const QString &text) const {
     return label;
 }
 
-dashboard::dashboard(QString title, const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+dashboard::dashboard(QString title, const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                      QWidget *parent)
-    : QWidget(parent), _title(std::move(title)), columns(new QSplitter(Qt::Horizontal)), data(feed), notes(notes) {
+    : QWidget(parent), feed_subscriber(this, feed), _title(std::move(title)), columns(new QSplitter(Qt::Horizontal)),
+      notes(notes) {
     columns->setHandleWidth(4);
     columns->setChildrenCollapsible(false);
 
@@ -127,23 +128,6 @@ dashboard::dashboard(QString title, const std::shared_ptr<journal::commander_fee
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(0);
     layout->addWidget(columns);
-
-    // Going live is reported again each time the game starts a new journal; only the first counts.
-    subs.push_back(data->on_progress([guard = QPointer(this)](const journal::ingest_progress &progress) {
-        if (!progress.caught_up()) return;
-        QMetaObject::invokeMethod(qApp, [guard] {
-            if (guard) guard->become_ready();
-        }, Qt::QueuedConnection);
-    }));
-}
-
-void dashboard::become_ready() {
-    if (is_ready) return;
-    is_ready = true;
-    const auto state = data->state();
-    if (!state) return;
-    const journal::game_event event(journal::json{{"event", ready}});
-    for (const auto &handler: std::exchange(ready_handlers, {})) handler(*state, event);
 }
 
 panel *dashboard::add_panel(const QString &title, const int colidx) const {
@@ -164,34 +148,10 @@ panel *dashboard::add_panel(const QString &title, const int colidx) const {
 
 
 void dashboard::notify(notification n) const {
+    if (n.feed.empty()) n.feed = feed()->id();
     if (n.source.isEmpty()) {
-        const auto state = data->state();
+        const auto state = feed()->state();
         n.source = state && state->name ? QString::fromStdString(*state->name) : QString();
     }
     notes.post(std::move(n));
-}
-
-void dashboard::subscribe(std::set<std::string> events, handler_fn handler) {
-    if (events.erase(ready)) {
-        if (!is_ready) {
-            ready_handlers.push_back(handler);
-        } else if (const auto state = data->state()) {
-            QMetaObject::invokeMethod(qApp, [guard = QPointer(this), handler, state] {
-                if (guard) handler(*state, journal::game_event(journal::json{{"event", ready}}));
-            }, Qt::QueuedConnection);
-        }
-        // Only Ready was asked for; an empty set would mean every event.
-        if (events.empty()) return;
-    }
-
-    subs.push_back(data->subscribe(events,
-                                   [guard = QPointer(this), feed = std::weak_ptr(data), handler = std::move(handler)](
-                               const journal::game_event &e, journal::phase) {
-                                       const auto f = feed.lock();
-                                       if (!f) return;
-                                       auto state = f->state();
-                                       QMetaObject::invokeMethod(qApp, [guard, handler, state = std::move(state), e] {
-                                           if (guard) handler(*state, e);
-                                       }, Qt::QueuedConnection);
-                                   }));
 }

@@ -145,6 +145,11 @@ namespace journal {
         // session that has ended. Also never recorded.
         [[nodiscard]] virtual bool game_running() const = 0;
 
+        // The game clients game_running() is based on, by pid; empty while it is false. More than one
+        // when the account that owns this directory runs several clients at once, since the probe
+        // cannot tell which of them writes here. Safe from any thread.
+        [[nodiscard]] virtual std::vector<std::uint32_t> game_pids() const = 0;
+
         // Delivers an event from outside the journal, such as a Companion API response, to live
         // subscribers in order with journal events. Like StartUp it is never parsed into state() or
         // recorded in history: both are rebuilt from journals alone. Safe from any thread; dropped if
@@ -155,9 +160,10 @@ namespace journal {
         virtual void start() = 0;
     };
 
-    // Whether the game is running for whoever owns a journal directory. Called on the ingest thread,
-    // when a directory is opened and every few seconds after, so it has to be quick.
-    using game_probe = std::function<bool(const std::filesystem::path & directory)>;
+    // The game clients running for whoever owns a journal directory, by pid; empty if there are none.
+    // Called on the ingest thread, when a directory is opened and every few seconds after, so it has
+    // to be quick.
+    using game_probe = std::function<std::vector<std::uint32_t>(const std::filesystem::path & directory)>;
 
     // The default probe: a running EliteDangerous64.exe (natively, or under Wine or Proton) owned by
     // the account that owns the directory. Once found, its pid is tracked, so the full process scan

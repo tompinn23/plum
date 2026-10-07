@@ -39,6 +39,7 @@ namespace journal {
 
     archive::archive(history_config config)
         : config_(std::move(config)), catalog_(open_catalog(config_.directory)) {
+        spdlog::info("history catalog in {}", files::utf8(config_.directory / "catalog.db"));
     }
 
     fs::path archive::store_file(const fs::path &directory, std::string_view key) {
@@ -87,6 +88,8 @@ namespace journal {
             const auto head = files::read_head(file.path);
             const std::string started = head.started.value_or(file.stamp_text());
             if (!head.names_commander()) return {std::nullopt, started};
+            spdlog::debug("cataloguing {}: {} {}", files::utf8(file.path.filename()), head.commander.value_or("?"),
+                          head.fid.value_or("(no FID)"));
             remember(file, started, head.fid, head.commander);
             return {resolve(head.fid, head.commander), started};
         } catch (const sql::error &e) {
@@ -105,6 +108,7 @@ namespace journal {
             spdlog::warn("cannot record the owner of {}: {}", files::utf8(file.path), e.what());
         }
         auto key = resolve(fid, commander);
+        spdlog::debug("{} claimed by {}", files::utf8(file.path.filename()), key);
         if (const auto it = stores_.find(key); it != stores_.end()) it->second.identify(fid, name);
         return key;
     }
@@ -161,6 +165,7 @@ namespace journal {
     void archive::settle() {
         for (auto &[key, store]: stores_) {
             if (!store.unordered()) continue;
+            spdlog::info("resequencing history for {}", key);
             try {
                 store.resequence();
             } catch (const history_error &e) {
@@ -170,6 +175,7 @@ namespace journal {
     }
 
     void archive::close() {
+        spdlog::debug("closing {} history stores", stores_.size());
         stores_.clear();
     }
 } // namespace journal

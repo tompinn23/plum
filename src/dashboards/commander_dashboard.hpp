@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-#include "../include/dashboard.hpp"
+#include "dashboard.hpp"
 
 class QLabel;
 class QTableWidget;
@@ -11,7 +11,7 @@ class commander_dashboard : public dashboard {
     Q_OBJECT
 
 public:
-    commander_dashboard(const std::shared_ptr<journal::commander_feed> &feed, notifications &notes,
+    commander_dashboard(const std::shared_ptr<journal::commander_feed> &feed, overlays &notes,
                         QWidget *parent = nullptr);
 
 private:
