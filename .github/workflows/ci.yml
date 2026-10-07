@@ -72,6 +72,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
+          modules: "qtnetworkauth"
           cache: true
 
       - name: Cache CPM packages
