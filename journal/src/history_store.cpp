@@ -526,16 +526,20 @@ namespace journal {
         return events;
     }
 
-    history_config history_config::standard(std::filesystem::path directory) {
-        history_config config;
-        config.directory = std::move(directory);
-        config.projections = {
+    std::vector<std::shared_ptr<projection> > builtin_projections() {
+        return {
             std::make_shared<ledger_projection>(),
             std::make_shared<visited_system_projection>(),
             std::make_shared<mission_log_projection>(),
             std::make_shared<carrier_projection>(),
             std::make_shared<massacre_projection>()
         };
+    }
+
+    history_config history_config::standard(std::filesystem::path directory) {
+        history_config config;
+        config.directory = std::move(directory);
+        config.projections = builtin_projections();
         return config;
     }
 } // namespace journal

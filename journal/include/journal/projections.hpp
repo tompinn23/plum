@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -185,4 +186,7 @@ namespace journal {
         // Newest first; the open session, if any, leads.
         static std::vector<session> sessions(const history &, int limit);
     };
+
+    // A fresh instance of each projection above, in the order history_config::standard applies them.
+    std::vector<std::shared_ptr<projection> > builtin_projections();
 } // namespace journal

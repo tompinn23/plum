@@ -15,15 +15,10 @@
 #include <spdlog/spdlog.h>
 
 #include "dashboard.hpp"
-#include "dashboards/carrier_dashboard.hpp"
-#include "dashboards/massacre_dashboard.hpp"
-#include "dashboards/commander_dashboard.hpp"
-#include "dashboards/event_log_dashboard.hpp"
 #include "journal_dialog.hpp"
 #include "sidebar.hpp"
 #include "overlays.hpp"
 #include "game_windows.hpp"
-#include "overlays/station_info.hpp"
 
 constexpr auto FRONTIER_CAPI_CLIENTID = "5758c1f5-e107-4b47-ac1f-a4c2b855acdd";
 
@@ -39,6 +34,8 @@ main_window::main_window(QWidget *parent)
     setWindowTitle("Plum");
     setMinimumSize(1100, 650);
     build_menu();
+
+    register_builtins(m_registry);
 
     m_windows = std::make_unique<game_windows>();
     overlays = std::make_unique<::overlays>(*m_windows);
@@ -88,13 +85,10 @@ main_window::~main_window() {
 }
 
 // Every feed gets the same pages in the same order, since the sidebar indexes into whichever set
-// is shown. Add new dashboards here.
+// is shown. New dashboards are added to the registry, not here.
 QStackedWidget *main_window::make_pages(const std::shared_ptr<journal::commander_feed> &feed) {
     auto *pages = new QStackedWidget;
-    pages->addWidget(new commander_dashboard(feed, *overlays));
-    pages->addWidget(new carrier_dashboard(feed, *overlays));
-    pages->addWidget(new massacre_dashboard(feed, *overlays));
-    pages->addWidget(new event_log_dashboard(feed, *overlays));
+    for (const auto &make: m_registry.dashboards()) pages->addWidget(make(feed, *overlays));
 
     // The first set decides the sidebar; the rest match it.
     if (!m_sidebar_built) {
@@ -132,9 +126,11 @@ void main_window::start_journals() {
             QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/plum/history";
     spdlog::info("starting journal service; history in {}", history_directory.toStdString());
 
+    journal::history_config config;
+    config.directory = to_path(history_directory);
+    config.projections = m_registry.projections();
     try {
-        m_journals = std::make_unique<journal::journal_service>(
-            journal::history_config::standard(to_path(history_directory)));
+        m_journals = std::make_unique<journal::journal_service>(std::move(config));
     } catch (const std::exception &e) {
         spdlog::error("cannot start journal service: {}", e.what());
         m_ingest->setText(QStringLiteral("journal service failed: %1").arg(QString::fromUtf8(e.what())));
@@ -281,7 +277,7 @@ void main_window::open_feed(const journal_source &source) {
     m_windows->track(id, entry.feed);
     overlays->add_feed(entry.feed);
 
-    entry.overlay_providers.push_back(std::make_unique<station_overlay>(entry.feed, *overlays, this));
+    for (const auto &make: m_registry.overlay_providers()) entry.overlay_providers.push_back(make(entry.feed, *overlays));
 
     // Built before the feed starts, so the pages hear the StartUp it sends on going live.
     entry.pages = make_pages(entry.feed);

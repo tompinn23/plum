@@ -12,6 +12,7 @@
 
 #include "client.hpp"
 #include "journal_sources.hpp"
+#include "registry.hpp"
 
 class QActionGroup;
 class QLabel;
@@ -79,6 +80,9 @@ private:
     QMenu *m_commanders = nullptr;
     QActionGroup *m_commander_group = nullptr;
     bool m_sidebar_built = false;
+
+    // What every feed gets. Filled before anything is built from it.
+    registry m_registry;
 
     std::unique_ptr<game_windows> m_windows; // each feed's game window, by feed id
     // Windows of their own over each game, so not children of this one. Before the pages, which

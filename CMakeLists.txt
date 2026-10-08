@@ -112,6 +112,7 @@ qt_add_executable(plum
         src/config.cpp include/config.hpp
         src/commodities.cpp include/commodities.hpp
         src/overlays/station_info.cpp include/overlays/station_info.hpp
+        src/registry.cpp include/registry.hpp
 )
 
 qt_add_resources(plum "resources"

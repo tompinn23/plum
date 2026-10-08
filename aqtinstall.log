@@ -1,0 +1,15 @@
+2026-10-08 20:07:17,074 - aqt.main - INFO - installer 140690632384640 aqtinstall(aqt) v3.3.0 on Python 3.13.16 [CPython GCC 13.3.0]
+2026-10-08 20:07:17,075 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:21,850 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:26,524 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:30,987 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:35,605 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:40,322 - aqt.archives - WARNING - archives 140690632384640 Failed to download checksum for the file 'online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml'. This may happen on unofficial mirrors.
+2026-10-08 20:07:45,132 - aqt.helper - WARNING - helper 140690632384640 Connection to 'https://download.qt.io' failed. Retrying with fallback 'https://ftp.fau.de/qtproject/'.
+2026-10-08 20:07:45,132 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:49,725 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:54,367 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:07:58,905 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:08:03,649 - aqt.helper - DEBUG - helper 140690632384640 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml.sha256
+2026-10-08 20:08:08,206 - aqt.archives - WARNING - archives 140690632384640 Failed to download checksum for the file 'online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml'. This may happen on unofficial mirrors.
+2026-10-08 20:08:12,471 - aqt.main - ERROR - installer 140690632384640 Failure to connect to https://ftp.fau.de/qtproject/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/Updates.xml: ProxyError
