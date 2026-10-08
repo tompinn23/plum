@@ -482,7 +482,7 @@ namespace journal {
     void feed::set_game_pids(std::vector<std::uint32_t> pids) {
         std::ranges::sort(pids);
         if (const auto old = game_pids_.load(); old ? *old == pids : pids.empty()) return;
-        spdlog::debug("[{}] game pids now {}", id_, pids);
+        spdlog::debug("[{}] game pids now {}", id_, pid_list(pids));
         game_pids_.store(std::make_shared<const std::vector<std::uint32_t> >(std::move(pids)));
     }
 

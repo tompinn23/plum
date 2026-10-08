@@ -389,7 +389,7 @@ void game_windows::check_pids() {
         auto pids = feed ? feed->game_pids() : std::vector<std::uint32_t>{};
         const bool had_window = std::ranges::any_of(t.pids, [&](auto pid) { return windows.contains(pid); });
         if (pids != t.pids) {
-            spdlog::info("[{}] game pids {}", id, pids);
+            spdlog::info("[{}] game pids {}", id, journal::pid_list(pids));
             if (had_window) lost.push_back(id);
         }
         t.pids = std::move(pids);

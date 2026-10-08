@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -32,6 +33,9 @@ namespace journal {
     };
 
     const char *to_string(phase p);
+
+    // Pids for a log line, as "[1, 2]". Not every standard library std::formats a vector itself.
+    std::string pid_list(const std::vector<std::uint32_t> &pids);
 
     // How far through its journal directory a feed has got.
     struct ingest_progress {

@@ -30,6 +30,15 @@ namespace journal {
         return "?";
     }
 
+    std::string pid_list(const std::vector<std::uint32_t> &pids) {
+        std::string text = "[";
+        for (const auto pid: pids) {
+            if (text.size() > 1) text += ", ";
+            text += std::to_string(pid);
+        }
+        return text + "]";
+    }
+
     namespace {
         // How long the ingest thread waits for a notification when it has nothing else to do; also the
         // worst-case delay before it notices a newly posted task.
