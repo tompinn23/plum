@@ -35,7 +35,7 @@ namespace {
     QVariant nodeToVariant(const toml::node &node) {
         switch (node.type()) {
             case toml::node_type::string: return fromStd(node.as_string()->get());
-            case toml::node_type::integer: return node.as_integer()->get();
+            case toml::node_type::integer: return qint64{node.as_integer()->get()};
             case toml::node_type::floating_point: return node.as_floating_point()->get();
             case toml::node_type::boolean: return node.as_boolean()->get();
             case toml::node_type::date: return toQDate(node.as_date()->get());

@@ -118,7 +118,7 @@ namespace journal {
         // histories, and a commander who plays from several directories has one. This is the
         // history of whoever is playing here, following state() from one journal to the next, or
         // before anything is read, whoever this directory last saw. Disabled until anyone is known.
-        [[nodiscard]] virtual history history() const = 0;
+        [[nodiscard]] virtual journal::history history() const = 0;
 
         // Events named in `events` (empty for all) during the given phases. The default is live
         // only, since replayed history would otherwise arrive as a flood at startup.
