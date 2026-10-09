@@ -43,8 +43,8 @@ namespace {
 } // namespace
 
 journal_dialog::journal_dialog(const std::vector<journal_source> &sources, QWidget *parent)
-    : QDialog(parent), m_table(new QTableWidget(0, 4)), m_browse(new QPushButton("Browse...")),
-      m_remove(new QPushButton("Remove")) {
+    : QDialog(parent), table(new QTableWidget(0, 4)), browse(new QPushButton("Browse...")),
+      remove(new QPushButton("Remove")) {
     setWindowTitle("Configuration - Journal directories");
     setMinimumSize(820, 400);
     resize(900, 460);
@@ -52,51 +52,51 @@ journal_dialog::journal_dialog(const std::vector<journal_source> &sources, QWidg
     auto *heading = new QLabel("Journal directories");
     heading->setObjectName("dialog_heading");
 
-    m_table->setObjectName("journal_table");
-    m_table->setHorizontalHeaderLabels({"Directory", "CMDR", "CAPI", ""});
-    m_table->horizontalHeaderItem(commander_column)->
+    table->setObjectName("journal_table");
+    table->setHorizontalHeaderLabels({"Directory", "CMDR", "CAPI", ""});
+    table->horizontalHeaderItem(commander_column)->
             setToolTip("The commander named in the directory's newest journal");
-    m_table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    m_table->horizontalHeader()->setSectionResizeMode(directory_column, QHeaderView::Stretch);
-    m_table->setColumnWidth(commander_column, 160);
-    m_table->setColumnWidth(status_column, 100);
-    m_table->setColumnWidth(link_column, 110);
-    m_table->verticalHeader()->hide();
-    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    m_table->verticalHeader()->setDefaultSectionSize(row_height);
-    m_table->setShowGrid(false);
-    m_table->setFocusPolicy(Qt::NoFocus);
+    table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    table->horizontalHeader()->setSectionResizeMode(directory_column, QHeaderView::Stretch);
+    table->setColumnWidth(commander_column, 160);
+    table->setColumnWidth(status_column, 100);
+    table->setColumnWidth(link_column, 110);
+    table->verticalHeader()->hide();
+    table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    table->verticalHeader()->setDefaultSectionSize(row_height);
+    table->setShowGrid(false);
+    table->setFocusPolicy(Qt::NoFocus);
     // Directories change through Add and Browse; the commander comes from the journals.
-    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
     for (const auto &source: sources) add_row(source);
 
     auto *add = new QPushButton(QStringLiteral(u"＋  Add directory..."));
     add->setObjectName("add_button");
     auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    for (auto *button: {add, m_browse, m_remove}) button->setCursor(Qt::PointingHandCursor);
+    for (auto *button: {add, browse, remove}) button->setCursor(Qt::PointingHandCursor);
     for (auto *button: box->buttons()) button->setCursor(Qt::PointingHandCursor);
 
     auto *bar = new QHBoxLayout;
     bar->setSpacing(8);
     bar->addWidget(add);
-    bar->addWidget(m_browse);
-    bar->addWidget(m_remove);
+    bar->addWidget(browse);
+    bar->addWidget(remove);
     bar->addStretch();
     bar->addWidget(box);
 
     auto *layout = new QVBoxLayout(this);
     layout->setSpacing(12);
     layout->addWidget(heading);
-    layout->addWidget(m_table, 1);
+    layout->addWidget(table, 1);
     layout->addLayout(bar);
 
     connect(add, &QPushButton::clicked, this, &journal_dialog::add_directory);
-    connect(m_browse, &QPushButton::clicked, this, &journal_dialog::browse_selected);
-    connect(m_remove, &QPushButton::clicked, this, &journal_dialog::remove_selected);
-    connect(m_table, &QTableWidget::itemSelectionChanged, this, &journal_dialog::update_buttons);
-    connect(m_table, &QTableWidget::itemChanged, this, [this](const QTableWidgetItem *item) {
+    connect(browse, &QPushButton::clicked, this, &journal_dialog::browse_selected);
+    connect(remove, &QPushButton::clicked, this, &journal_dialog::remove_selected);
+    connect(table, &QTableWidget::itemSelectionChanged, this, &journal_dialog::update_buttons);
+    connect(table, &QTableWidget::itemChanged, this, [this](const QTableWidgetItem *item) {
         if (item->column() == directory_column) refresh_row(item->row());
     });
     connect(box, &QDialogButtonBox::accepted, this, &journal_dialog::accept);
@@ -107,10 +107,10 @@ journal_dialog::journal_dialog(const std::vector<journal_source> &sources, QWidg
 
 std::vector<journal_source> journal_dialog::sources() const {
     std::vector<journal_source> result;
-    for (int row = 0; row < m_table->rowCount(); ++row) {
+    for (int row = 0; row < table->rowCount(); ++row) {
         result.push_back({
-            .id = m_table->item(row, commander_column)->data(id_role).toString(),
-            .directory = QDir::fromNativeSeparators(cell_text(m_table, row, directory_column))
+            .id = table->item(row, commander_column)->data(id_role).toString(),
+            .directory = QDir::fromNativeSeparators(cell_text(table, row, directory_column))
         });
     }
     return result;
@@ -118,10 +118,10 @@ std::vector<journal_source> journal_dialog::sources() const {
 
 void journal_dialog::accept() {
     QStringList missing;
-    for (int row = 0; row < m_table->rowCount(); ++row) {
-        const QString directory = cell_text(m_table, row, directory_column);
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const QString directory = cell_text(table, row, directory_column);
         if (directory.isEmpty()) {
-            m_table->selectRow(row);
+            table->selectRow(row);
             QMessageBox::warning(this, windowTitle(), "Every entry needs a directory.");
             return;
         }
@@ -139,15 +139,15 @@ void journal_dialog::accept() {
 }
 
 void journal_dialog::add_row(const journal_source &source) {
-    const QSignalBlocker blocker(m_table);
-    const int row = m_table->rowCount();
-    m_table->insertRow(row);
+    const QSignalBlocker blocker(table);
+    const int row = table->rowCount();
+    table->insertRow(row);
 
-    m_table->setItem(row, directory_column, new QTableWidgetItem(QDir::toNativeSeparators(source.directory)));
+    table->setItem(row, directory_column, new QTableWidgetItem(QDir::toNativeSeparators(source.directory)));
     auto *commander = new QTableWidgetItem;
     commander->setData(id_role, source.id);
-    m_table->setItem(row, commander_column, commander);
-    m_table->setItem(row, status_column, new QTableWidgetItem);
+    table->setItem(row, commander_column, commander);
+    table->setItem(row, status_column, new QTableWidgetItem);
 
     // Looked up by id when clicked: rows above it may have been removed since, and the directory
     // edited.
@@ -159,10 +159,10 @@ void journal_dialog::add_row(const journal_source &source) {
     connect(link, &QPushButton::clicked, this, [this, id = source.id] {
         if (const int at = row_of(id); at >= 0)
             emit link_requested({
-                .id = id, .directory = QDir::fromNativeSeparators(cell_text(m_table, at, directory_column))
+                .id = id, .directory = QDir::fromNativeSeparators(cell_text(table, at, directory_column))
             });
     });
-    m_table->setCellWidget(row, link_column, centred(link));
+    table->setCellWidget(row, link_column, centred(link));
 
     set_linked(source.id, false);
     refresh_row(row);
@@ -172,12 +172,12 @@ void journal_dialog::set_linked(const QString &id, const bool linked) const {
     const int row = row_of(id);
     if (row < 0) return;
 
-    const QSignalBlocker blocker(m_table);
-    auto *status = m_table->item(row, status_column);
+    const QSignalBlocker blocker(table);
+    auto *status = table->item(row, status_column);
     status->setText(linked ? QStringLiteral("Linked") : QStringLiteral("Not linked"));
     status->setForeground(linked ? linked_colour : muted_colour);
 
-    if (auto *link = m_table->cellWidget(row, link_column)->findChild<QPushButton *>()) {
+    if (auto *link = table->cellWidget(row, link_column)->findChild<QPushButton *>()) {
         link->setText(linked ? QStringLiteral("Re-link") : QStringLiteral("Link CAPI"));
         // The theme styles a linked account's button quietly; restyle it now the property changed.
         link->setProperty("linked", linked);
@@ -187,8 +187,8 @@ void journal_dialog::set_linked(const QString &id, const bool linked) const {
 }
 
 int journal_dialog::row_of(const QString &id) const {
-    for (int row = 0; row < m_table->rowCount(); ++row) {
-        if (const auto *item = m_table->item(row, commander_column); item && item->data(id_role).toString() == id)
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (const auto *item = table->item(row, commander_column); item && item->data(id_role).toString() == id)
             return row;
     }
     return -1;
@@ -200,36 +200,36 @@ void journal_dialog::add_directory() {
     if (directory.isEmpty()) return;
 
     add_row({.id = new_journal_source_id(), .directory = directory});
-    m_table->selectRow(m_table->rowCount() - 1);
+    table->selectRow(table->rowCount() - 1);
 }
 
 void journal_dialog::browse_selected() {
-    const int row = m_table->currentRow();
+    const int row = table->currentRow();
     if (row < 0) return;
 
     const QString directory =
             QFileDialog::getExistingDirectory(this, "Choose journal directory",
-                                              cell_text(m_table, row, directory_column));
-    if (!directory.isEmpty()) m_table->item(row, directory_column)->setText(QDir::toNativeSeparators(directory));
+                                              cell_text(table, row, directory_column));
+    if (!directory.isEmpty()) table->item(row, directory_column)->setText(QDir::toNativeSeparators(directory));
 }
 
 void journal_dialog::remove_selected() const {
-    if (const int row = m_table->currentRow(); row >= 0) m_table->removeRow(row);
+    if (const int row = table->currentRow(); row >= 0) table->removeRow(row);
 }
 
 void journal_dialog::update_buttons() const {
-    const bool selected = !m_table->selectedItems().isEmpty();
-    m_browse->setEnabled(selected);
-    m_remove->setEnabled(selected);
+    const bool selected = !table->selectedItems().isEmpty();
+    browse->setEnabled(selected);
+    remove->setEnabled(selected);
 }
 
 // Re-reads who the directory's journals name, and flags a directory that does not exist.
 void journal_dialog::refresh_row(const int row) const {
-    auto *directory = m_table->item(row, directory_column);
-    auto *commander = m_table->item(row, commander_column);
+    auto *directory = table->item(row, directory_column);
+    auto *commander = table->item(row, commander_column);
     if (!directory || !commander) return;
 
-    const QSignalBlocker blocker(m_table);
+    const QSignalBlocker blocker(table);
     const QString path = directory->text().trimmed();
     const bool exists = QFileInfo(path).isDir();
     directory->setForeground(exists ? text_colour : missing_colour);

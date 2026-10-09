@@ -29,46 +29,46 @@ namespace {
 } // namespace
 
 main_window::main_window(QWidget *parent)
-    : QMainWindow(parent), m_sidebar(new sidebar), m_sets(new QStackedWidget), m_status(new QLabel),
-      m_ingest(new QLabel) {
+    : QMainWindow(parent), sidebar(new ::sidebar), sets(new QStackedWidget), status(new QLabel),
+      ingest(new QLabel) {
     setWindowTitle("Plum");
     setMinimumSize(1100, 650);
     build_menu();
 
-    register_builtins(m_registry);
+    register_builtins(registry);
 
-    m_windows = std::make_unique<game_windows>();
-    overlays = std::make_unique<::overlays>(*m_windows);
+    windows = std::make_unique<game_windows>();
+    overlays = std::make_unique<::overlays>(*windows);
 
     // Status bar sits under the dashboards only, so the sidebar runs full height.
     auto *status_bar = new QWidget;
     status_bar->setObjectName("status_bar");
     status_bar->setAttribute(Qt::WA_StyledBackground);
     status_bar->setFixedHeight(28);
-    m_status->setObjectName("status_text");
-    m_ingest->setObjectName("status_text");
+    status->setObjectName("status_text");
+    ingest->setObjectName("status_text");
     auto *status_layout = new QHBoxLayout(status_bar);
     status_layout->setContentsMargins(8, 0, 8, 0);
-    status_layout->addWidget(m_ingest);
+    status_layout->addWidget(ingest);
     status_layout->addStretch();
-    status_layout->addWidget(m_status);
+    status_layout->addWidget(status);
 
     auto *right = new QWidget;
     auto *right_layout = new QVBoxLayout(right);
     right_layout->setContentsMargins(0, 0, 0, 0);
     right_layout->setSpacing(0);
-    right_layout->addWidget(m_sets, 1);
+    right_layout->addWidget(sets, 1);
     right_layout->addWidget(status_bar);
 
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addWidget(m_sidebar);
+    layout->addWidget(sidebar);
     layout->addWidget(right, 1);
     setCentralWidget(central);
 
-    connect(m_sidebar, &sidebar::current_changed, this, &main_window::show_page);
+    connect(sidebar, &::sidebar::current_changed, this, &main_window::show_page);
 
     start_journals();
 }
@@ -76,49 +76,49 @@ main_window::main_window(QWidget *parent)
 // Pages go first, taking their subscriptions with them; then the service, so its thread cannot
 // post into a window being torn down.
 main_window::~main_window() {
-    spdlog::debug("main window closing {} feeds", m_feeds.size());
-    for (auto &[id, entry]: m_feeds) delete entry.pages;
-    m_feeds.clear();
+    spdlog::debug("main window closing {} feeds", feeds.size());
+    for (auto &[id, entry]: feeds) delete entry.pages;
+    feeds.clear();
     overlays.reset();
-    m_windows.reset();
-    m_journals.reset();
+    windows.reset();
+    journals.reset();
 }
 
 // Every feed gets the same pages in the same order, since the sidebar indexes into whichever set
 // is shown. New dashboards are added to the registry, not here.
 QStackedWidget *main_window::make_pages(const std::shared_ptr<journal::commander_feed> &feed) {
     auto *pages = new QStackedWidget;
-    for (const auto &make: m_registry.dashboards()) pages->addWidget(make(feed, *overlays));
+    for (const auto &make: registry.dashboards()) pages->addWidget(make(feed, *overlays));
 
     // The first set decides the sidebar; the rest match it.
-    if (!m_sidebar_built) {
+    if (!sidebar_built) {
         for (int i = 0; i < pages->count(); ++i)
-            if (const auto *page = qobject_cast<dashboard *>(pages->widget(i))) m_sidebar->add_entry(page->title());
-        m_sidebar->set_current(m_page);
-        m_sidebar_built = true;
+            if (const auto *board = qobject_cast<dashboard *>(pages->widget(i))) sidebar->add_entry(board->title());
+        sidebar->set_current(page);
+        sidebar_built = true;
     }
     return pages;
 }
 
 void main_window::set_active(const std::string &id) {
-    const auto it = m_feeds.find(id);
-    if (it == m_feeds.end() || !it->second.pages) return;
-    if (m_active != id) spdlog::info("[{}] showing {}", id, display_name(it->second).toStdString());
-    m_active = id;
-    m_sets->setCurrentWidget(it->second.pages);
-    show_page(m_page);
+    const auto it = feeds.find(id);
+    if (it == feeds.end() || !it->second.pages) return;
+    if (active != id) spdlog::info("[{}] showing {}", id, display_name(it->second).toStdString());
+    active = id;
+    sets->setCurrentWidget(it->second.pages);
+    show_page(page);
     update_commander_menu();
 }
 
 // The sidebar picks the page within the active feed's set.
 void main_window::show_page(const int index) {
-    if (m_page != index) spdlog::debug("page {} selected", index);
-    m_page = index;
-    const auto it = m_feeds.find(m_active);
-    if (it == m_feeds.end() || !it->second.pages) return;
+    if (page != index) spdlog::debug("page {} selected", index);
+    page = index;
+    const auto it = feeds.find(active);
+    if (it == feeds.end() || !it->second.pages) return;
     it->second.pages->setCurrentIndex(index);
-    if (const auto *page = qobject_cast<dashboard *>(it->second.pages->currentWidget()))
-        m_status->setText(QStringLiteral("%1  %2").arg(display_name(it->second), page->title()));
+    if (const auto *board = qobject_cast<dashboard *>(it->second.pages->currentWidget()))
+        status->setText(QStringLiteral("%1  %2").arg(display_name(it->second), board->title()));
 }
 
 void main_window::start_journals() {
@@ -128,12 +128,12 @@ void main_window::start_journals() {
 
     journal::history_config config;
     config.directory = to_path(history_directory);
-    config.projections = m_registry.projections();
+    config.projections = registry.projections();
     try {
-        m_journals = std::make_unique<journal::journal_service>(std::move(config));
+        journals = std::make_unique<journal::journal_service>(std::move(config));
     } catch (const std::exception &e) {
         spdlog::error("cannot start journal service: {}", e.what());
-        m_ingest->setText(QStringLiteral("journal service failed: %1").arg(QString::fromUtf8(e.what())));
+        ingest->setText(QStringLiteral("journal service failed: %1").arg(QString::fromUtf8(e.what())));
         return;
     }
     apply_journal_sources(load_journal_sources());
@@ -141,8 +141,8 @@ void main_window::start_journals() {
 
 void main_window::edit_journal_sources() {
     std::vector<journal_source> current;
-    for (const auto &[id, entry]: m_feeds) current.push_back(entry.source);
-    // m_feeds is keyed by id; show them in the order they were saved instead.
+    for (const auto &[id, entry]: feeds) current.push_back(entry.source);
+    // feeds is keyed by id; show them in the order they were saved instead.
     const auto saved = load_journal_sources();
     std::ranges::sort(current, {}, [&saved](const journal_source &s) {
         return std::ranges::find(saved, s.id, &journal_source::id) - saved.begin();
@@ -152,7 +152,7 @@ void main_window::edit_journal_sources() {
 
     // Each row's Link button signs in that feed's client; the button says when it has. The
     // connections end with the dialog.
-    for (const auto &[id, entry]: m_feeds) {
+    for (const auto &[id, entry]: feeds) {
         if (!entry.capi) continue;
         const QString source_id = entry.source.id;
         dialog.set_linked(source_id, entry.capi->is_authorized());
@@ -162,8 +162,8 @@ void main_window::edit_journal_sources() {
                 [&dialog](const QString &why) { QMessageBox::warning(&dialog, "Link Frontier account", why); });
     }
     connect(&dialog, &journal_dialog::link_requested, &dialog, [this, &dialog](const journal_source &source) {
-        const auto it = m_feeds.find(source.id.toStdString());
-        if (it == m_feeds.end() || !it->second.capi || it->second.source.directory != source.directory) {
+        const auto it = feeds.find(source.id.toStdString());
+        if (it == feeds.end() || !it->second.capi || it->second.source.directory != source.directory) {
             QMessageBox::information(&dialog, "Link Frontier account",
                                      "Save this directory first, then link it.");
         } else {
@@ -186,10 +186,10 @@ void main_window::edit_journal_sources() {
 // Brings the open feeds in line with `sources`: closes the ones that went away or moved, and
 // opens the ones that are new. Feeds whose directory is unchanged keep running untouched.
 void main_window::apply_journal_sources(const std::vector<journal_source> &sources) {
-    if (!m_journals) return;
-    spdlog::debug("applying {} journal sources to {} open feeds", sources.size(), m_feeds.size());
+    if (!journals) return;
+    spdlog::debug("applying {} journal sources to {} open feeds", sources.size(), feeds.size());
 
-    for (auto it = m_feeds.begin(); it != m_feeds.end();) {
+    for (auto it = feeds.begin(); it != feeds.end();) {
         const auto wanted = std::ranges::find(sources, QString::fromStdString(it->first), &journal_source::id);
         if (wanted != sources.end() && wanted->directory == it->second.source.directory) {
             ++it;
@@ -197,21 +197,21 @@ void main_window::apply_journal_sources(const std::vector<journal_source> &sourc
         }
         spdlog::info("[{}] {}", it->first, wanted == sources.end() ? "removed" : "moved");
         close_feed(it);
-        it = m_feeds.erase(it);
+        it = feeds.erase(it);
     }
 
     for (const auto &source: sources)
-        if (!m_feeds.contains(source.id.toStdString())) open_feed(source);
+        if (!feeds.contains(source.id.toStdString())) open_feed(source);
 
     // The active feed went away, or there was none: show the first that has pages.
-    if (!m_feeds.contains(m_active)) {
-        m_active.clear();
-        for (const auto &[id, entry]: m_feeds) {
+    if (!feeds.contains(active)) {
+        active.clear();
+        for (const auto &[id, entry]: feeds) {
             if (!entry.pages) continue;
             set_active(id);
             break;
         }
-        if (m_active.empty()) m_status->clear();
+        if (active.empty()) status->clear();
     }
 
     update_ingest_status();
@@ -223,7 +223,7 @@ void main_window::close_feed(const std::map<std::string, feed_entry>::iterator i
     spdlog::info("[{}] closing journals in {}", it->first, it->second.source.directory.toStdString());
     auto &entry = it->second;
     if (entry.pages) {
-        m_sets->removeWidget(entry.pages);
+        sets->removeWidget(entry.pages);
         delete entry.pages;
         entry.pages = nullptr;
     }
@@ -231,8 +231,8 @@ void main_window::close_feed(const std::map<std::string, feed_entry>::iterator i
     entry.capi.reset();
     entry.overlay_providers.clear();
     overlays->remove_feed(it->first);
-    m_windows->untrack(it->first);
-    m_journals->close(it->first);
+    windows->untrack(it->first);
+    journals->close(it->first);
 }
 
 /**
@@ -242,14 +242,14 @@ void main_window::close_feed(const std::map<std::string, feed_entry>::iterator i
  */
 void main_window::open_feed(const journal_source &source) {
     const std::string id = source.id.toStdString();
-    auto &entry = m_feeds[id];
+    auto &entry = feeds[id];
     entry.source = source;
     entry.commander = journal_commander(source.directory);
     spdlog::info("[{}] opening journals in {}; last commander there {}", id, source.directory.toStdString(),
                  entry.commander.toStdString());
 
     try {
-        entry.feed = m_journals->open(id, to_path(source.directory));
+        entry.feed = journals->open(id, to_path(source.directory));
     } catch (const std::exception &e) {
         spdlog::error("cannot watch journals in {}: {}", source.directory.toStdString(), e.what());
         return;
@@ -274,15 +274,15 @@ void main_window::open_feed(const journal_source &source) {
         spdlog::debug("[{}] no Frontier account linked", id);
     }
 
-    m_windows->track(id, entry.feed);
+    windows->track(id, entry.feed);
     overlays->add_feed(entry.feed);
 
-    for (const auto &make: m_registry.overlay_providers()) entry.overlay_providers.push_back(make(entry.feed, *overlays));
+    for (const auto &make: registry.overlay_providers()) entry.overlay_providers.push_back(make(entry.feed, *overlays));
 
     // Built before the feed starts, so the pages hear the StartUp it sends on going live.
     entry.pages = make_pages(entry.feed);
-    m_sets->addWidget(entry.pages);
-    if (m_active.empty()) set_active(id);
+    sets->addWidget(entry.pages);
+    if (active.empty()) set_active(id);
 
     entry.feed->start();
     spdlog::debug("[{}] feed started with {} pages", id, entry.pages->count());
@@ -290,8 +290,8 @@ void main_window::open_feed(const journal_source &source) {
 
 void main_window::show_progress(const std::string &id, const journal::ingest_progress &progress) {
     // A feed that was just closed may still deliver one last update.
-    const auto it = m_feeds.find(id);
-    if (it == m_feeds.end()) return;
+    const auto it = feeds.find(id);
+    if (it == feeds.end()) return;
 
     const bool newly_live = progress.caught_up() && !(it->second.progress && it->second.progress->caught_up());
     spdlog::trace("[{}] progress {} {}/{} ({} skipped)", id, journal::to_string(progress.stage), progress.files_done,
@@ -303,7 +303,7 @@ void main_window::show_progress(const std::string &id, const journal::ingest_pro
     if (newly_live) {
         spdlog::info("[{}] live as {}", id, display_name(it->second).toStdString());
         update_commander_menu();
-        if (id == m_active) show_page(m_page);
+        if (id == active) show_page(page);
     }
 }
 
@@ -315,32 +315,32 @@ QString main_window::display_name(const feed_entry &entry) const {
 
 // One checkable entry per feed with pages; choosing one shows that feed's set.
 void main_window::update_commander_menu() {
-    if (!m_commanders) return;
-    m_commanders->clear();
-    delete m_commander_group;
-    m_commander_group = new QActionGroup(this);
-    m_commander_group->setExclusive(true);
+    if (!commanders) return;
+    commanders->clear();
+    delete commander_group;
+    commander_group = new QActionGroup(this);
+    commander_group->setExclusive(true);
 
-    for (const auto &[id, entry]: m_feeds) {
+    for (const auto &[id, entry]: feeds) {
         if (!entry.pages) continue;
-        auto *action = m_commanders->addAction(display_name(entry));
+        auto *action = commanders->addAction(display_name(entry));
         action->setToolTip(QDir::toNativeSeparators(entry.source.directory));
         action->setCheckable(true);
-        action->setChecked(id == m_active);
-        m_commander_group->addAction(action);
+        action->setChecked(id == active);
+        commander_group->addAction(action);
         connect(action, &QAction::triggered, this, [this, id] { set_active(id); });
     }
-    m_commanders->setEnabled(!m_commanders->isEmpty());
+    commanders->setEnabled(!commanders->isEmpty());
 }
 
 void main_window::update_ingest_status() {
-    if (m_feeds.empty()) {
-        m_ingest->setText(QStringLiteral("no journal directories  (File > Journal directories...)"));
+    if (feeds.empty()) {
+        ingest->setText(QStringLiteral("no journal directories  (File > Journal directories...)"));
         return;
     }
 
     QStringList parts;
-    for (const auto &[id, entry]: m_feeds) {
+    for (const auto &[id, entry]: feeds) {
         const QString name = display_name(entry);
         if (!entry.feed) {
             parts << QStringLiteral("%1: not found").arg(name);
@@ -355,7 +355,7 @@ void main_window::update_ingest_status() {
                     .arg(p.files_total);
         }
     }
-    m_ingest->setText(parts.join(QStringLiteral("   |   ")));
+    ingest->setText(parts.join(QStringLiteral("   |   ")));
 }
 
 void main_window::build_menu() {
@@ -364,8 +364,8 @@ void main_window::build_menu() {
     file->addSeparator();
     file->addAction("Quit", QKeySequence("Ctrl+Q"), this, &QWidget::close);
 
-    m_commanders = menuBar()->addMenu("Commander");
-    m_commanders->setEnabled(false);
+    commanders = menuBar()->addMenu("Commander");
+    commanders->setEnabled(false);
 
     auto *help = menuBar()->addMenu("Help");
     help->addAction("About", this, [this] {

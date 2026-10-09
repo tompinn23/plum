@@ -73,24 +73,24 @@ private:
 
     [[nodiscard]] QString display_name(const feed_entry &entry) const;
 
-    sidebar *m_sidebar;
-    QStackedWidget *m_sets; // one page set per feed; the visible one is the active feed's
-    QLabel *m_status;
-    QLabel *m_ingest;
-    QMenu *m_commanders = nullptr;
-    QActionGroup *m_commander_group = nullptr;
-    bool m_sidebar_built = false;
+    ::sidebar *sidebar;
+    QStackedWidget *sets; // one page set per feed; the visible one is the active feed's
+    QLabel *status;
+    QLabel *ingest;
+    QMenu *commanders = nullptr;
+    QActionGroup *commander_group = nullptr;
+    bool sidebar_built = false;
 
     // What every feed gets. Filled before anything is built from it.
-    registry m_registry;
+    ::registry registry;
 
-    std::unique_ptr<game_windows> m_windows; // each feed's game window, by feed id
+    std::unique_ptr<game_windows> windows; // each feed's game window, by feed id
     // Windows of their own over each game, so not children of this one. Before the pages, which
     // post notifications to it, and after them on the way out.
     std::unique_ptr<::overlays> overlays;
 
-    std::unique_ptr<journal::journal_service> m_journals;
-    std::map<std::string, feed_entry> m_feeds; // keyed by journal_source::id
-    std::string m_active; // the feed whose pages are shown
-    int m_page = 0; // the sidebar's page, kept across switches
+    std::unique_ptr<journal::journal_service> journals;
+    std::map<std::string, feed_entry> feeds; // keyed by journal_source::id
+    std::string active; // the feed whose pages are shown
+    int page = 0; // the sidebar's page, kept across switches
 };

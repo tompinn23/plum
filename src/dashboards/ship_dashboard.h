@@ -13,9 +13,9 @@ public:
     void show_state(const journal::game_state &state) override;
 
 private:
-    QLabel *m_type, *m_name, *m_ident, *m_jump, *m_mass, *m_modules;
-    panel *m_cargo;
-    QLabel *m_used, *m_limpets, *m_kinds;
-    QLabel *m_hull, *m_module_value, *m_rebuy;
-    QLabel *m_fuel_main, *m_fuel_reserve;
+    QLabel *type, *name, *ident, *jump, *mass, *modules;
+    panel *cargo;
+    QLabel *used, *limpets, *kinds;
+    QLabel *hull, *module_value, *rebuy;
+    QLabel *fuel_main, *fuel_reserve;
 };

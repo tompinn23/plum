@@ -47,7 +47,7 @@ private:
 
     void refresh_row(int row) const;
 
-    QTableWidget *m_table;
-    QPushButton *m_browse;
-    QPushButton *m_remove;
+    QTableWidget *table;
+    QPushButton *browse;
+    QPushButton *remove;
 };
